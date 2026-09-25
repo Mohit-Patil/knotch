@@ -68,6 +68,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
     private var pendingActivation: UInt64?
     private var priorFrontmostPID: pid_t?
     private var isApplyingPresentation = false
+    private var systemDialogDepth = 0
     private let motion = OverlayMotion()
     private var immediatePresentation = false
     var isAnimating: Bool { motion.isAnimating }
@@ -170,6 +171,19 @@ final class OverlayController: NSObject, NSWindowDelegate {
     }
 
     func setHoverEnabled(_ enabled: Bool) { send(.hoverEnabledChanged(enabled)) }
+
+    /// System pickers and alerts must be above the overlay. Restore the
+    /// screen-edge level after their modal loop finishes, including cancel.
+    func setSystemDialogPresented(_ presented: Bool) {
+        systemDialogDepth = max(0, systemDialogDepth + (presented ? 1 : -1))
+        updateWindowLevels()
+    }
+
+    private func updateWindowLevels() {
+        let level: NSWindow.Level = systemDialogDepth > 0 ? .normal : .statusBar
+        panel.level = level
+        triggerPanel.level = level
+    }
 
     /// The caller changes the supplied content view/session first, then calls this.
     /// It never creates, closes, or replaces a terminal process.
@@ -489,12 +503,11 @@ final class OverlayController: NSObject, NSWindowDelegate {
         self.layout = layout
         let notched = layout.notchFrame != nil
         (panel as? OverlayNativePanel)?.anchorsToScreenEdge = true
-        panel.level = .statusBar
+        updateWindowLevels()
         panelRoot.layer?.maskedCorners = notched
             ? [.layerMinXMinYCorner, .layerMaxXMinYCorner]
             : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         triggerPanel.anchorsToScreenEdge = true
-        triggerPanel.level = .statusBar
         triggerPanel.setFrame(layout.triggerFrame, display: true)
         motion.cancel(at: state.presentation == .collapsed ? 0 : 1)
         renderMotionFrame(motion.value, reducedMotion: reduceMotion)

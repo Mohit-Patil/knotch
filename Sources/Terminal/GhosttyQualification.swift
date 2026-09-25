@@ -272,6 +272,12 @@ enum HarnessQualification {
                             && abs(overlay.panel.frame.width - layout.panelFrame.width) < 0.5,
                           "Expanded native panel \(overlay.panel.frame) fits current screen placement \(layout.usableFrame) at its top edge")
             }
+            overlay.setSystemDialogPresented(true)
+            try check("System dialog layering", overlay.panel.level == .normal,
+                      "Presenting a native picker lowers the notch panel below modal windows")
+            overlay.setSystemDialogPresented(false)
+            try check("System dialog level restored", overlay.panel.level == .statusBar,
+                      "Closing or cancelling a native picker restores the edge overlay level")
             let surface = session.surface!
             let pid = ghostty_surface_foreground_pid(surface)
             let beforeWindows = Set(NSApp.windows.map(\.windowNumber))

@@ -180,7 +180,10 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         tabs.onClose = { [weak self] in self?.closeTab(id: $0) }
         tabs.onRename = { [weak self] in self?.renameSession(id: $0) }
-        tabs.onMenuLock = { [weak self] in self?.overlay?.setInteractionLock("tab-menu", $0) }
+        tabs.onMenuLock = { [weak self] open in
+            self?.overlay?.setInteractionLock("tab-menu", open)
+            self?.overlay?.setSystemDialogPresented(open)
+        }
         tabHeight = tabs.heightAnchor.constraint(equalToConstant: 0)
         tabHeight?.isActive = true
         for view in [toolbar, tabs, container] { view.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(view) }
@@ -313,6 +316,15 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func renameSelectedTab() {
         if !settingsSelected, let id = store.selectedID { renameSession(id: id) }
     }
+    private func runAppDialog<T>(_ body: () -> T) -> T {
+        overlay?.setInteractionLock("dialog", true)
+        overlay?.setSystemDialogPresented(true)
+        defer {
+            overlay?.setSystemDialogPresented(false)
+            overlay?.setInteractionLock("dialog", false)
+        }
+        return body()
+    }
     func renameSession(id: UUID) {
         guard let session = store.sessions.first(where: { $0.id == id }) else { return }
         overlay?.setInteractionLock("rename", true)
@@ -327,7 +339,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
         alert.window.initialFirstResponder = field
-        guard alert.runModal() == .alertFirstButtonReturn,
+        guard runAppDialog({ alert.runModal() }) == .alertFirstButtonReturn,
               store.sessions.contains(where: { $0.id == id }) else { return }
         session.customTitle = field.stringValue
         updateStatus()
@@ -344,14 +356,13 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc func chooseProject() {
         showTerminal()
-        overlay?.setInteractionLock("dialog", true)
-        defer { overlay?.setInteractionLock("dialog", false) }
         let picker = NSOpenPanel()
         picker.canChooseDirectories = true
         picker.canChooseFiles = false
         picker.allowsMultipleSelection = false
         picker.prompt = "Open Terminal"
-        if picker.runModal() == .OK, let url = picker.url { open(directory: url) }
+        if runAppDialog({ picker.runModal() }) == .OK, let url = picker.url { open(directory: url) }
+        else { showTerminal() }
     }
     @objc func openHome() { open(directory: FileManager.default.homeDirectoryForCurrentUser) }
     @objc func showTerminal() {
@@ -375,15 +386,16 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     func closeTab(id: UUID) {
         guard let session = store.sessions.first(where: { $0.id == id }) else { return }
-        overlay?.setInteractionLock("dialog", true)
-        defer { overlay?.setInteractionLock("dialog", false) }
         if session.isRunning {
             let alert = NSAlert()
             alert.messageText = "End “\(session.displayTitle)”?"
             alert.informativeText = "This tab’s shell and running tools will end. Other tabs keep running."
             alert.addButton(withTitle: "Keep Running")
             alert.addButton(withTitle: "End Session")
-            guard alert.runModal() == .alertSecondButtonReturn else { return }
+            guard runAppDialog({ alert.runModal() }) == .alertSecondButtonReturn else {
+                showTerminal()
+                return
+            }
         }
         session.view.removeFromSuperview()
         store.closeAfterConfirmation(id: id)
@@ -432,18 +444,16 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if quitting { return .terminateNow }
         if store.sessions.contains(where: { $0.isRunning }) {
-            overlay?.setInteractionLock("dialog", true)
-            defer { overlay?.setInteractionLock("dialog", false) }
             let alert = NSAlert()
             alert.messageText = "Quit and end all terminal sessions?"
             alert.informativeText = "Sessions do not survive app exit. Hiding keeps your shell and tools running."
             alert.addButton(withTitle: "Keep App Running")
             alert.addButton(withTitle: "Hide Instead")
             alert.addButton(withTitle: "Quit and End All Sessions")
-            switch alert.runModal() {
+            switch runAppDialog({ alert.runModal() }) {
             case .alertThirdButtonReturn: break
             case .alertSecondButtonReturn: hideTerminal(); return .terminateCancel
-            default: return .terminateCancel
+            default: showTerminal(); return .terminateCancel
             }
         }
         store.closeAllAfterConfirmation()
@@ -456,6 +466,6 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func windowDidResignKey(_ notification: Notification) { store.session?.setFocused(false) }
     func showError(_ error: Error) {
         let alert = NSAlert(error: error)
-        alert.runModal()
+        _ = runAppDialog { alert.runModal() }
     }
 }

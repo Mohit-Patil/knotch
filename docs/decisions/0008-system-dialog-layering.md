@@ -1,0 +1,7 @@
+# System dialogs above the notch panel
+
+The owner showed the native Open Project picker behind Knotch's expanded Settings panel. The screen-edge overlay uses AppKit's status-bar window level, which is higher than a normal modal file picker. Locking pointer-exit minimisation did not change that order.
+
+All app-owned modal dialogs now pass through one presentation helper. While an `NSOpenPanel` or `NSAlert` is open, the helper lowers the notch panel and collapsed trigger to the normal window level and holds the existing interaction lock. A `defer` restores the status-bar level and releases the lock on confirm, cancel, or error. This covers project selection, tab rename, end-session confirmation, quit confirmation, and errors. Tab context menus use the same temporary level change while open. Cancelling the project picker or an end-session confirmation returns to the terminal panel.
+
+The focused native fixture verifies the level transition and restoration alongside display placement and Ghostty session retention. The fixture's attempted automated `NSOpenPanel.runModal()` check did not finish because its timer did not dismiss the OS dialog in the direct-executable test context; it was removed from the final suite. After restarting the installed app, computer control verified that the actual Open Project picker appeared above Knotch, cancellation restored the panel, and a close-session alert also appeared above it. Only the newly created verification shell was ended; the app was left collapsed with no Knotch shell.
