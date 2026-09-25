@@ -10,6 +10,7 @@ enum OverlayEvent {
     case pointerExitedTrigger
     case pointerEnteredPanel
     case pointerExitedPanel
+    case terminalInput
     case timerFired(UInt64)
     case activate
     case hide
@@ -46,6 +47,7 @@ struct OverlayState {
     var targetDisplayID: String?
     var hoverDwell = 0.180
     var exitGrace = 0.350
+    var typingGrace = 1.5
 
     private(set) var pointerInTrigger = false
     private(set) var pointerInPanel = false
@@ -59,6 +61,8 @@ struct OverlayState {
     private var nextToken: UInt64 = 0
     private var pendingHover: PendingTimer?
     private var pendingExit: PendingTimer?
+    private var exitIntent = false
+    private var lastTerminalInputAt: Double?
 
     @discardableResult
     mutating func send(_ event: OverlayEvent, now: Double) -> [OverlayEffect] {
@@ -67,6 +71,7 @@ struct OverlayState {
         case .pointerEnteredTrigger:
             guard !pointerInTrigger else { return effects }
             pointerInTrigger = true
+            exitIntent = false
             cancelPending(&effects)
             if presentation == .collapsed && hoverEnabled {
                 armHover(now: now, &effects)
@@ -78,18 +83,30 @@ struct OverlayState {
             if presentation == .collapsed {
                 cancelPending(&effects)
             } else {
+                exitIntent = true
                 armExitIfEligible(now: now, &effects)
             }
 
         case .pointerEnteredPanel:
             guard !pointerInPanel else { return effects }
             pointerInPanel = true
+            exitIntent = false
             cancelPending(&effects)
 
         case .pointerExitedPanel:
             guard pointerInPanel else { return effects }
             pointerInPanel = false
+            exitIntent = true
             armExitIfEligible(now: now, &effects)
+
+        case .terminalInput:
+            if presentation == .interactive {
+                lastTerminalInputAt = now
+                if exitIntent {
+                    cancelPending(&effects)
+                    armExitIfEligible(now: now, &effects)
+                }
+            }
 
         case .timerFired(let token):
             if let timer = pendingHover, timer.token == token, now >= timer.deadline {
@@ -99,14 +116,21 @@ struct OverlayState {
                 }
             } else if let timer = pendingExit, timer.token == token, now >= timer.deadline {
                 pendingExit = nil
-                if presentation == .preview && !isPinned && interactionLocks.isEmpty
+                if (presentation == .preview || presentation == .interactive)
+                    && exitIntent && !isPinned && interactionLocks.isEmpty
                     && !pointerInTrigger && !pointerInPanel {
+                    if ownsFocus {
+                        ownsFocus = false
+                        effects.append(.releaseFocus)
+                    }
                     changePresentation(.collapsed, &effects)
                 }
             }
 
         case .activate:
             cancelPending(&effects)
+            exitIntent = false
+            lastTerminalInputAt = nil
             if presentation != .interactive || !ownsFocus {
                 ownsFocus = true
                 changePresentation(.interactive, &effects)
@@ -117,6 +141,8 @@ struct OverlayState {
             cancelPending(&effects)
             pointerInTrigger = false
             pointerInPanel = false
+            exitIntent = false
+            lastTerminalInputAt = nil
             if ownsFocus {
                 ownsFocus = false
                 effects.append(.releaseFocus)
@@ -144,6 +170,8 @@ struct OverlayState {
             cancelPending(&effects)
             if enabled && presentation == .collapsed && pointerInTrigger {
                 armHover(now: now, &effects)
+            } else {
+                armExitIfEligible(now: now, &effects)
             }
 
         case .lockAdded(let reason):
@@ -157,6 +185,7 @@ struct OverlayState {
         case .displayChanged(let displayID):
             targetDisplayID = displayID
             cancelPending(&effects)
+            exitIntent = false
             if presentation == .preview && !isPinned && interactionLocks.isEmpty {
                 changePresentation(.collapsed, &effects)
             }
@@ -182,9 +211,12 @@ struct OverlayState {
     }
 
     private mutating func armExitIfEligible(now: Double, _ effects: inout [OverlayEffect]) {
-        guard presentation == .preview, !isPinned, interactionLocks.isEmpty,
+        guard (presentation == .preview || presentation == .interactive), exitIntent,
+              !isPinned, interactionLocks.isEmpty,
               !pointerInTrigger, !pointerInPanel, pendingExit == nil else { return }
-        let timer = PendingTimer(token: freshToken(), deadline: now + max(0, exitGrace))
+        let ordinaryDeadline = now + max(0, exitGrace)
+        let typingDeadline = lastTerminalInputAt.map { $0 + max(0, typingGrace) } ?? ordinaryDeadline
+        let timer = PendingTimer(token: freshToken(), deadline: max(ordinaryDeadline, typingDeadline))
         pendingExit = timer
         effects.append(.scheduleExit(token: timer.token, deadline: timer.deadline))
     }
@@ -204,6 +236,10 @@ struct OverlayState {
     private mutating func changePresentation(_ next: OverlayPresentation, _ effects: inout [OverlayEffect]) {
         guard presentation != next else { return }
         presentation = next
+        if next == .collapsed {
+            exitIntent = false
+            lastTerminalInputAt = nil
+        }
         effects.append(.presentationChanged(next))
     }
 }

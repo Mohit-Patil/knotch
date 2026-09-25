@@ -11,15 +11,17 @@ struct TerminalShortcut: Codable, Equatable {
 
 /// Public registered-hot-key API; no global keyboard monitor or permission prompt.
 @MainActor
-final class ShortcutController {
+final class ShortcutController: NSObject, NSWindowDelegate {
     private var registration: EventHotKeyRef?
     private var handler: EventHandlerRef?
     private(set) var current: TerminalShortcut?
     var onToggle: (() -> Void)?
+    var onSettingsClosed: (() -> Void)?
     var settingsWindow: NSWindow?
     private let defaults = UserDefaults.standard
 
-    init() {
+    override init() {
+        super.init()
         var type = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         InstallEventHandler(GetApplicationEventTarget(), { _, _, data in
             MainActor.assumeIsolated {
@@ -65,6 +67,7 @@ final class ShortcutController {
         if let settingsWindow { NSApp.activate(); settingsWindow.makeKeyAndOrderFront(nil); return }
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 470, height: 320), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Knotch Access"
+        window.delegate = self
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: AccessSettings(controller: self, initialHover: hoverEnabled, setHover: setHover))
         window.center()
@@ -72,6 +75,8 @@ final class ShortcutController {
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
     }
+
+    func windowWillClose(_ notification: Notification) { onSettingsClosed?() }
 
     func shutdown() {
         if let registration { UnregisterEventHotKey(registration) }
@@ -97,7 +102,7 @@ private struct AccessSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Your terminal, at the notch").font(.title2.weight(.semibold))
-            Text("Hover to inspect. Click or use your shortcut to type. Hiding keeps your tools running; quitting ends the session.")
+            Text("Hover to open. Click or use your shortcut to type. Move away to minimise; typing, selection and dialogs keep it open. Your tools keep running while minimised.")
                 .foregroundStyle(.secondary)
             Toggle("Reveal on hover", isOn: $hover).onChange(of: hover) { _, value in setHover(value) }
             HStack {

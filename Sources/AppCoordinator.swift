@@ -53,7 +53,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             let hover = UserDefaults.standard.object(forKey: "access.hover.v1") as? Bool ?? true
             controller.setHoverEnabled(hover)
-            controller.activate()
+            // Launch at the notch. Only a click/shortcut or explicit directory launch activates.
         }
         #if HARNESS_TESTS
         if CommandLine.arguments.contains("--self-test") {
@@ -78,7 +78,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         appMenu.addItem(withTitle: "Show Terminal", action: #selector(showTerminal), keyEquivalent: "0").target = self
         appMenu.addItem(withTitle: "Open Project…", action: #selector(chooseProject), keyEquivalent: "o").target = self
         appMenu.addItem(withTitle: "Open Home Shell", action: #selector(openHome), keyEquivalent: "").target = self
-        appMenu.addItem(withTitle: "Hide Terminal", action: #selector(hideTerminal), keyEquivalent: "h").target = self
+        appMenu.addItem(withTitle: "Minimise Terminal", action: #selector(hideTerminal), keyEquivalent: "h").target = self
         appMenu.addItem(withTitle: "Close Session…", action: #selector(closeSession), keyEquivalent: "w").target = self
         appMenu.addItem(withTitle: "Access & Shortcut…", action: #selector(showAccessSettings), keyEquivalent: ",").target = self
         appMenu.addItem(.separator())
@@ -110,7 +110,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let toolbar = NSStackView()
         toolbar.orientation = .horizontal
         toolbar.spacing = 10
-        for (title, action) in [("Open Project…", #selector(chooseProject)), ("Home Shell", #selector(openHome)), ("Hide", #selector(hideTerminal)), ("Close…", #selector(closeSession)), ("Shortcut…", #selector(showAccessSettings))] {
+        for (title, action) in [("Open Project…", #selector(chooseProject)), ("Home Shell", #selector(openHome)), ("Minimise", #selector(hideTerminal)), ("Close…", #selector(closeSession)), ("Shortcut…", #selector(showAccessSettings))] {
             let button = NSButton(title: title, target: self, action: action)
             button.bezelStyle = .rounded
             button.setAccessibilityLabel(title)
@@ -138,7 +138,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let empty = NSHostingView(rootView: VStack(spacing: 16) {
             Image(systemName: "terminal").font(.system(size: 34, weight: .light))
             Text("A terminal within reach").font(.title2.weight(.semibold))
-            Text("Open a project or a home shell above.\nRun your installed coding tools here.\nHover to inspect; click or use a shortcut to type.")
+            Text("Open a project or a home shell above.\nRun your installed coding tools here.\nHover to open, click to type, move away to minimise.")
                 .multilineTextAlignment(.center).foregroundStyle(.secondary)
             Text("Hiding keeps your session running. Quitting ends it.").font(.caption).foregroundStyle(.secondary)
         }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(30))
@@ -165,6 +165,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         session.onCloseRequested = { [weak self] in self?.closeSession() }
         session.onActivate = { [weak self] in self?.showTerminal() }
+        session.onInput = { [weak self] in self?.overlay?.send(.terminalInput) }
         session.onInteractionLock = { [weak self] locked in self?.overlay?.setInteractionLock("terminal", locked) }
         statusLabel.stringValue = session.status
         window?.layoutIfNeeded()
@@ -233,6 +234,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     @objc func showAccessSettings() {
         if shortcut == nil { shortcut = ShortcutController() }
+        overlay?.setInteractionLock("settings", true)
+        shortcut?.onSettingsClosed = { [weak self] in self?.overlay?.setInteractionLock("settings", false) }
         shortcut?.showSettings(hoverEnabled: overlay?.state.hoverEnabled ?? true, setHover: { [weak self] value in
             UserDefaults.standard.set(value, forKey: "access.hover.v1")
             self?.overlay?.setHoverEnabled(value)

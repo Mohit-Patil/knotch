@@ -11,6 +11,7 @@ protocol TerminalSession: AnyObject {
     var onStatusChange: (() -> Void)? { get set }
     var onCloseRequested: (() -> Void)? { get set }
     var onActivate: (() -> Void)? { get set }
+    var onInput: (() -> Void)? { get set }
     var onInteractionLock: ((Bool) -> Void)? { get set }
     func setPresented(_ value: Bool)
     func setFocused(_ value: Bool)

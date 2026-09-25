@@ -147,6 +147,11 @@ enum HarnessQualification {
         let output = ProcessInfo.processInfo.environment["KNOTCH_EVIDENCE"] ?? "/tmp/knotch-overlay-results.json"
         do {
             guard let runtime = coordinator.runtime, let overlay = coordinator.overlay else { throw TerminalFailure.unavailable("No overlay runtime") }
+            overlay.fixtureControlsTracking = true
+            try check("Collapsed launch", overlay.state.presentation == .collapsed && !overlay.panel.isVisible, "Launch exposes only the notch trigger, without activating the terminal")
+            if let layout = overlay.layout, let notch = layout.notchFrame, let screen = overlay.panel.screen {
+                try check("Notch attachment", overlay.triggerFrame == layout.triggerFrame && overlay.triggerFrame.maxY == screen.frame.maxY && overlay.triggerFrame.contains(notch) && overlay.triggerFrame.intersects(overlay.panel.frame), "Actual cap \(overlay.triggerFrame) covers reported cutout \(notch) and overlaps terminal body \(overlay.panel.frame); no detached pill")
+            }
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("knotch-overlay-fixture", isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let session = try GhosttySession(runtime: runtime, directory: folder, testCommand: "/bin/zsh -f")
@@ -190,9 +195,27 @@ enum HarnessQualification {
             overlay.activate()
             try await waitFor { overlay.panel.isKeyWindow }
             try check("UX-03 activation", overlay.state.presentation == .interactive && overlay.panel.firstResponder === session.view, "Deliberate controller activation made actual panel and terminal key")
+            send("printf 'TYPING_HOLDS\\n'\r", to: session)
             overlay.send(.pointerExitedPanel)
             try await Task.sleep(for: .milliseconds(400))
-            try check("UX-05", overlay.panel.isVisible && overlay.panel.isKeyWindow, "Pointer exit does not collapse an interactive terminal")
+            try check("Typing postpones minimise", overlay.panel.isVisible && overlay.panel.isKeyWindow, "Real terminal input postponed auto-collapse after pointer exit")
+            try await waitFor({ !overlay.panel.isVisible }, timeout: 3, description: "idle pointer-exit minimise")
+            try check("Interactive auto-minimise", session.surface == surface && ghostty_surface_foreground_pid(surface!) == pid, "After typing grace expired, panel collapsed with same shell and surface")
+            overlay.send(.pointerEnteredTrigger)
+            try await waitFor { overlay.state.presentation == .preview }
+            overlay.send(.pointerExitedTrigger)
+            overlay.send(.pointerExitedPanel)
+            try await waitFor({ !overlay.panel.isVisible }, description: "hover preview auto-minimise")
+            try check("Preview auto-minimise", true, "Leaving a hover preview collapsed the native panel after exit grace")
+            overlay.send(.pointerEnteredPanel)
+            overlay.activate()
+            overlay.setInteractionLock("selection-fixture", true)
+            overlay.send(.pointerExitedPanel)
+            try await Task.sleep(for: .milliseconds(1700))
+            try check("Selection prevents minimise", overlay.panel.isVisible, "An active interaction lock held the panel beyond typing grace")
+            overlay.setInteractionLock("selection-fixture", false)
+            try await waitFor({ !overlay.panel.isVisible }, description: "minimise after interaction ends")
+            overlay.activate()
             send("stty -echo -icanon min 1 time 0; printf 'ESC_READY\\n'; dd bs=1 count=1 2>/dev/null | od -An -tu1; stty sane; printf 'ESC_DONE\\n'\r", to: session)
             try await waitFor { screen(session).contains("\nESC_READY") }
             send("\u{1b}", to: session)
@@ -225,6 +248,7 @@ enum HarnessQualification {
         } catch {
             records.append(["test": "Overlay completion", "result": "FAILED", "detail": error.localizedDescription])
             print("OVERLAY_FAILURE: \(error.localizedDescription)")
+            if let overlay = coordinator.overlay { print("OVERLAY_STATE: \(overlay.state)") }
         }
         let data = try? JSONSerialization.data(withJSONObject: ["engine": "982fe90d941e4b4aab4905ffcbcfdea60bd83343", "results": records] as [String: Any], options: [.prettyPrinted, .sortedKeys])
         if let data { try? data.write(to: URL(fileURLWithPath: output), options: .atomic) }

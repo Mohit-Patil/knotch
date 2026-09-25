@@ -6,6 +6,8 @@ struct ModelTests {
         testHoverAndStaleTimers()
         testExitGraceAndLocks()
         testActivationFocusPinAndHide()
+        testInteractiveExitAndTypingGrace()
+        testInteractiveLocksAndKeyboardOnlyAccess()
         testDisplayAndNotifications()
         testGeometry()
         testRandomizedTransitions()
@@ -65,9 +67,10 @@ struct ModelTests {
         let effects = state.send(.activate, now: 0)
         expect(state.presentation == .interactive && state.ownsFocus, "activation enters interactive")
         expect(effects.contains(.requestFocus), "activation must request focus")
-        state.send(.pointerExitedTrigger, now: 1)
-        state.send(.pointerExitedPanel, now: 1)
-        expect(state.presentation == .interactive, "pointer exit cannot collapse interactive")
+        expect(state.send(.pointerExitedTrigger, now: 1).isEmpty
+               && state.send(.pointerExitedPanel, now: 1).isEmpty,
+               "shortcut opening without pointer entry has no exit timer")
+        expect(state.presentation == .interactive, "keyboard-only opening stays interactive")
         state.send(.focusLost, now: 2)
         expect(state.presentation == .collapsed && !state.ownsFocus, "unpin focus loss collapses")
 
@@ -86,6 +89,70 @@ struct ModelTests {
         state.send(.activate, now: 10)
         state.send(.focusLost, now: 11)
         expect(state.presentation == .preview, "menu lock holds presentation on focus loss")
+    }
+
+    static func testInteractiveExitAndTypingGrace() {
+        var state = OverlayState()
+        state.send(.activate, now: 0)
+        state.send(.pointerEnteredPanel, now: 0.1)
+        let first = exitToken(state.send(.pointerExitedPanel, now: 1))
+        state.send(.timerFired(first), now: 1.34)
+        expect(state.presentation == .interactive, "interactive exit waits for grace")
+        let collapse = state.send(.timerFired(first), now: 1.36)
+        expect(state.presentation == .collapsed && !state.ownsFocus,
+               "interactive pointer exit minimises after grace")
+        expect(collapse.contains(.releaseFocus), "timed collapse releases terminal focus")
+
+        state.send(.activate, now: 10)
+        state.send(.pointerEnteredPanel, now: 10.1)
+        state.send(.terminalInput, now: 10.2)
+        let exit = state.send(.pointerExitedPanel, now: 10.3)
+        let second = exitToken(exit)
+        expect(exitDeadline(exit) >= 11.7, "recent typing extends exit past ordinary grace")
+        state.send(.timerFired(second), now: 10.7)
+        expect(state.presentation == .interactive, "recent typing holds interactive panel")
+        let renewed = state.send(.terminalInput, now: 11)
+        let third = exitToken(renewed)
+        expect(third != second && exitDeadline(renewed) >= 12.5,
+               "each input renews inactivity deadline and timer token")
+        state.send(.timerFired(second), now: 12)
+        expect(state.presentation == .interactive, "stale timer cannot collapse during typing")
+        state.send(.timerFired(third), now: 12.49)
+        expect(state.presentation == .interactive, "typing grace persists until deadline")
+        let final = state.send(.timerFired(third), now: 12.51)
+        expect(state.presentation == .collapsed && final.contains(.releaseFocus),
+               "interactive panel minimises after typing inactivity")
+    }
+
+    static func testInteractiveLocksAndKeyboardOnlyAccess() {
+        var state = OverlayState()
+        state.send(.activate, now: 0)
+        expect(state.send(.terminalInput, now: 0.2).isEmpty,
+               "typing event alone neither changes focus nor presentation")
+        state.send(.timerFired(999), now: 5)
+        expect(state.presentation == .interactive, "shortcut access stays open without actual pointer exit")
+
+        state.send(.pointerEnteredPanel, now: 6)
+        state.send(.lockAdded("selection"), now: 6.1)
+        expect(state.send(.pointerExitedPanel, now: 6.2).isEmpty,
+               "selection lock suppresses pointer exit schedule")
+        state.send(.terminalInput, now: 6.3)
+        let unlocked = state.send(.lockRemoved("selection"), now: 6.4)
+        let token = exitToken(unlocked)
+        expect(exitDeadline(unlocked) >= 7.8, "unlock retains exit intent and recent typing grace")
+        state.send(.pointerEnteredTrigger, now: 6.5)
+        state.send(.timerFired(token), now: 8)
+        expect(state.presentation == .interactive, "reentry invalidates lock-release timer")
+        state.send(.pinChanged(true), now: 8.1)
+        expect(state.send(.pointerExitedTrigger, now: 8.2).isEmpty,
+               "pin blocks interactive auto-collapse")
+        let unpinned = state.send(.pinChanged(false), now: 8.3)
+        let unpinToken = exitToken(unpinned)
+        state.send(.timerFired(unpinToken), now: 8.66)
+        expect(state.presentation == .collapsed, "unpin honors recorded pointer exit")
+        expect(state.send(.terminalInput, now: 9).isEmpty
+               && state.presentation == .collapsed && !state.ownsFocus,
+               "input notification cannot reopen a hidden panel")
     }
 
     static func testDisplayAndNotifications() {
@@ -114,17 +181,45 @@ struct ModelTests {
                                        auxiliaryTopRight: CGRect(x: -810, y: 966, width: 810, height: 34),
                                        backingScale: 2)
         let notch = geometry.layout()
-        expect(visible.contains(notch.triggerFrame) && visible.contains(notch.panelFrame),
-               "negative-origin frames must stay visible")
-        expect(notch.panelFrame.maxY <= notch.triggerFrame.minY, "panel belongs below trigger")
+        expect(screen.contains(notch.triggerFrame) && visible.contains(notch.panelFrame),
+               "negative-origin silhouette stays on screen and body stays usable")
+        expect(notch.notchFrame == CGRect(x: -1110, y: 966, width: 300, height: 34),
+               "negative-origin auxiliary areas identify the physical cutout")
+        expect(near(notch.triggerFrame.maxY, screen.maxY)
+               && notch.triggerFrame.minY < notch.panelFrame.maxY,
+               "silhouette reaches the screen edge and joins the panel lip")
         expect(notch.backingPixels(for: CGSize(width: 100, height: 50)) == CGSize(width: 200, height: 100),
                "2x backing conversion")
+
+        var liveGeometry = DisplayGeometry(screenFrame: CGRect(x: 0, y: 0, width: 1710, height: 1112),
+                                           visibleFrame: CGRect(x: 63, y: 0, width: 1647, height: 1073),
+                                           safeAreaTop: 38,
+                                           auxiliaryTopLeft: CGRect(x: 0, y: 1074, width: 751, height: 38),
+                                           auxiliaryTopRight: CGRect(x: 960, y: 1074, width: 750, height: 38),
+                                           backingScale: 2)
+        let live = liveGeometry.layout()
+        expect(live.notchFrame == CGRect(x: 751, y: 1074, width: 209, height: 38),
+               "live screen cutout coordinates must be preserved")
+        expect(live.triggerFrame == CGRect(x: 743, y: 1065, width: 225, height: 47),
+               "trigger wraps cutout with 8 pt wings and visible lip")
+        expect(near(live.panelFrame.maxY, 1073)
+               && near(live.panelFrame.midX, 855.5),
+               "panel body joins lip at the usable top and cutout center")
+        expect(live.triggerFrame.intersects(live.panelFrame),
+               "regression: panel and physical-notch trigger must not detach")
+        liveGeometry.visibleFrame = liveGeometry.screenFrame
+        let notchWithHiddenMenu = liveGeometry.layout()
+        expect(near(notchWithHiddenMenu.panelFrame.maxY, 1074),
+               "auto-hidden menu cannot put readable content in the cutout")
 
         geometry.auxiliaryTopLeft = nil
         geometry.auxiliaryTopRight = nil
         geometry.safeAreaTop = 0
         geometry.backingScale = 1
         let plain = geometry.layout()
+        expect(plain.notchFrame == nil, "plain display has no inferred cutout")
+        expect(visible.contains(plain.triggerFrame) && visible.contains(plain.panelFrame),
+               "plain-display pill and body stay inside visible frame")
         expect(near(plain.triggerFrame.midX, screen.midX), "plain display uses top center")
         expect(plain.backingPixels(for: CGSize(width: 100, height: 50)) == CGSize(width: 100, height: 50),
                "1x backing conversion")
@@ -133,6 +228,12 @@ struct ModelTests {
         let autoHiddenMenu = geometry.layout()
         expect(autoHiddenMenu.triggerFrame.maxY > plain.triggerFrame.maxY,
                "auto-hidden menu bar makes top space available")
+
+        geometry.auxiliaryTopLeft = CGRect(x: -1920, y: 900, width: 810, height: 34)
+        geometry.auxiliaryTopRight = CGRect(x: -810, y: 966, width: 810, height: 34)
+        expect(geometry.layout().notchFrame == nil, "inconsistent auxiliary areas fall back safely")
+        geometry.auxiliaryTopLeft = nil
+        geometry.auxiliaryTopRight = nil
 
         geometry.screenFrame = CGRect(x: -400, y: 200, width: 290, height: 130)
         geometry.visibleFrame = CGRect(x: -400, y: 200, width: 290, height: 130)
@@ -152,7 +253,7 @@ struct ModelTests {
             random = random &* 6364136223846793005 &+ 1442695040888963407
             now += 0.017
             let event: OverlayEvent
-            switch random % 15 {
+            switch random % 16 {
             case 0: event = .pointerEnteredTrigger
             case 1: event = .pointerExitedTrigger
             case 2: event = .pointerEnteredPanel
@@ -167,6 +268,7 @@ struct ModelTests {
             case 11: event = .displayChanged((random & 64) != 0 ? "A" : "B")
             case 12: event = .notificationReceived
             case 13: event = .screenLocked
+            case 14: event = .terminalInput
             default: event = .timerFired(tokens.isEmpty ? 0 : tokens[Int(random % UInt64(tokens.count))])
             }
             let before = state.presentation
@@ -185,8 +287,10 @@ struct ModelTests {
                 expect(state.presentation == before && !effects.contains(.requestFocus),
                        "notification cannot change presentation or focus")
             }
-            if case .pointerExitedPanel = event, before == .interactive {
-                expect(state.presentation == .interactive, "pointer exit cannot close interactive")
+            if case .terminalInput = event {
+                expect(state.presentation == before && !effects.contains(.requestFocus)
+                       && !effects.contains(.releaseFocus),
+                       "terminal input cannot open, close, or change focus")
             }
         }
     }
@@ -209,6 +313,13 @@ struct ModelTests {
             if case .scheduleExit(let token, _) = effect { return token }
         }
         fatalError("expected exit timer")
+    }
+
+    static func exitDeadline(_ effects: [OverlayEffect]) -> Double {
+        for effect in effects {
+            if case .scheduleExit(_, let deadline) = effect { return deadline }
+        }
+        fatalError("expected exit deadline")
     }
 
     static func near(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) < 0.001 }

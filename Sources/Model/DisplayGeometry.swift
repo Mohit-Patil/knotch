@@ -12,43 +12,81 @@ struct DisplayGeometry {
 
     var preferredPanelSize = CGSize(width: 960, height: 520)
     var triggerSize = CGSize(width: 160, height: 28)
-    var panelGap: CGFloat = 6
+    var panelGap: CGFloat = 0
 
     func layout() -> OverlayLayout {
         let clippedVisible = screenFrame.intersection(visibleFrame)
         let usable = clippedVisible.isNull || clippedVisible.isEmpty ? screenFrame : clippedVisible
+        if let notch = validNotchFrame() {
+            return notchedLayout(notch: notch, usable: usable)
+        }
+
+        // On a display without a camera cutout, keep the compact pill entirely
+        // below the menu bar and place the expanded body directly beneath it.
         let topBelowSafeArea = screenFrame.maxY - max(0, safeAreaTop)
         let top = clamp(topBelowSafeArea, min: usable.minY + 1, max: usable.maxY)
         let triggerWidth = min(max(1, triggerSize.width), max(1, usable.width))
         let triggerHeight = min(max(1, triggerSize.height), max(1, top - usable.minY))
-
-        // The gap between the public auxiliary areas identifies the excluded
-        // camera region. Keep the trigger centered on that gap when available.
-        let notchCenter: CGFloat? = {
-            guard let left = auxiliaryTopLeft, let right = auxiliaryTopRight,
-                  left.maxX < right.minX else { return nil }
-            return (left.maxX + right.minX) / 2
-        }()
-        let centerX = notchCenter ?? screenFrame.midX
+        let centerX = screenFrame.midX
         let triggerX = clamp(centerX - triggerWidth / 2,
                              min: usable.minX, max: usable.maxX - triggerWidth)
         let trigger = CGRect(x: triggerX, y: top - triggerHeight,
                              width: triggerWidth, height: triggerHeight)
 
-        let availablePanelHeight = max(0, trigger.minY - max(0, panelGap) - usable.minY)
+        let panel = panelFrame(centerX: centerX,
+                               top: trigger.minY - max(0, panelGap), usable: usable)
+        return OverlayLayout(triggerFrame: trigger, panelFrame: panel,
+                             usableFrame: usable, notchFrame: nil,
+                             backingScale: max(1, backingScale))
+    }
+
+    private func notchedLayout(notch: CGRect, usable: CGRect) -> OverlayLayout {
+        // The readable body ends at the actual usable top. The silhouette
+        // surrounds the measured cutout and overlaps the body by an 8 pt lip.
+        let panelTop = clamp(min(usable.maxY, notch.minY,
+                                 screenFrame.maxY - max(0, safeAreaTop)),
+                             min: usable.minY + 1, max: usable.maxY)
+        let lip: CGFloat = 8
+        let wing: CGFloat = 8
+        let triggerX = clamp(notch.minX - wing,
+                             min: screenFrame.minX, max: screenFrame.maxX - min(screenFrame.width, notch.width + 2 * wing))
+        let triggerWidth = min(screenFrame.width, notch.width + 2 * wing)
+        let triggerBottom = max(screenFrame.minY, panelTop - lip)
+        let trigger = CGRect(x: triggerX, y: triggerBottom,
+                             width: triggerWidth, height: screenFrame.maxY - triggerBottom)
+        let panel = panelFrame(centerX: notch.midX, top: panelTop, usable: usable)
+        return OverlayLayout(triggerFrame: trigger, panelFrame: panel,
+                             usableFrame: usable, notchFrame: notch,
+                             backingScale: max(1, backingScale))
+    }
+
+    private func panelFrame(centerX: CGFloat, top: CGFloat, usable: CGRect) -> CGRect {
+        let availablePanelHeight = max(0, top - usable.minY)
         let panelWidth = min(max(1, preferredPanelSize.width), max(1, usable.width))
-        // When there is no room beneath the trigger, keep a positive frame in
-        // the visible area. The controller can choose compact UI at that size.
         let panelHeight = min(max(1, preferredPanelSize.height),
                               max(1, availablePanelHeight), max(1, usable.height))
         let panelX = clamp(centerX - panelWidth / 2,
                            min: usable.minX, max: usable.maxX - panelWidth)
-        let panelY = clamp(trigger.minY - max(0, panelGap) - panelHeight,
+        let panelY = clamp(top - panelHeight,
                            min: usable.minY, max: usable.maxY - panelHeight)
-        let panel = CGRect(x: panelX, y: panelY,
-                           width: panelWidth, height: panelHeight)
-        return OverlayLayout(triggerFrame: trigger, panelFrame: panel,
-                             usableFrame: usable, backingScale: max(1, backingScale))
+        return CGRect(x: panelX, y: panelY,
+                      width: panelWidth, height: panelHeight)
+    }
+
+    private func validNotchFrame() -> CGRect? {
+        guard let left = auxiliaryTopLeft, let right = auxiliaryTopRight,
+              left.width > 0, right.width > 0, left.height > 0, right.height > 0,
+              left.maxX < right.minX,
+              left.minX >= screenFrame.minX - 1,
+              right.maxX <= screenFrame.maxX + 1,
+              abs(left.maxY - screenFrame.maxY) <= 1,
+              abs(right.maxY - screenFrame.maxY) <= 1,
+              abs(left.minY - right.minY) <= 1,
+              left.minY > screenFrame.minY else { return nil }
+        let bottom = min(left.minY, right.minY)
+        return CGRect(x: left.maxX, y: bottom,
+                      width: right.minX - left.maxX,
+                      height: screenFrame.maxY - bottom)
     }
 
     private func clamp(_ value: CGFloat, min lower: CGFloat, max upper: CGFloat) -> CGFloat {
@@ -60,6 +98,8 @@ struct OverlayLayout {
     var triggerFrame: CGRect
     var panelFrame: CGRect
     var usableFrame: CGRect
+    /// Physical camera exclusion derived from auxiliary areas; nil on plain displays.
+    var notchFrame: CGRect?
     var backingScale: CGFloat
 
     /// Convert a point size to backing pixels only at the native-view boundary.

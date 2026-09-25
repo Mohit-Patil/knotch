@@ -28,6 +28,7 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient {
     }
 
     var onActivate: (() -> Void)?
+    var onInput: (() -> Void)?
     /// The panel uses this to hold its presentation while selection or IME input is active.
     var onInteractionLock: ((Bool) -> Void)?
 
@@ -150,8 +151,8 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient {
         }
     }
 
-    @objc func copy(_ sender: Any?) { binding("copy_to_clipboard") }
-    @objc func paste(_ sender: Any?) { binding("paste_from_clipboard") }
+    @objc func copy(_ sender: Any?) { onInput?(); binding("copy_to_clipboard") }
+    @objc func paste(_ sender: Any?) { onInput?(); binding("paste_from_clipboard") }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.type == .keyDown, window?.firstResponder === self,
@@ -161,8 +162,8 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient {
         }
         let plainCommand = event.modifierFlags.intersection([.control, .option, .shift]).isEmpty
         switch character {
-        case "c" where plainCommand: return binding("copy_to_clipboard")
-        case "v" where plainCommand: return binding("paste_from_clipboard")
+        case "c" where plainCommand: onInput?(); return binding("copy_to_clipboard")
+        case "v" where plainCommand: onInput?(); return binding("paste_from_clipboard")
         default:
             // Let app-owned shortcuts (especially Command-W) reach the menu.
             if character == "w" || ("1"..."9").contains(character) {
@@ -190,6 +191,7 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient {
 
     override func keyDown(with event: NSEvent) {
         guard let surface else { return }
+        onInput?()
         let translation = translatedEvent(event, surface: surface)
         let hadMarkedText = hasMarkedText()
         keyTextAccumulator = []
@@ -374,6 +376,7 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient {
         return NSRange(location: Int(text.offset_start), length: Int(text.offset_len))
     }
     func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        onInput?()
         if let string = string as? NSAttributedString {
             markedText = NSMutableAttributedString(attributedString: string)
         } else if let string = string as? String {
@@ -411,6 +414,7 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient {
         return window.convertToScreen(convert(rect, to: nil))
     }
     func insertText(_ string: Any, replacementRange: NSRange) {
+        onInput?()
         let committed: String
         if let attributed = string as? NSAttributedString {
             leadSurrogate = nil
@@ -529,6 +533,7 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient {
 
     override func scrollWheel(with event: NSEvent) {
         guard let surface else { return }
+        onInput?()
         let phase: Int32
         switch event.momentumPhase {
         case .began: phase = 1

@@ -13,6 +13,7 @@ final class GhosttySession: TerminalSession {
     var onStatusChange: (() -> Void)?
     var onCloseRequested: (() -> Void)?
     var onActivate: (() -> Void)? { didSet { nativeView.onActivate = onActivate } }
+    var onInput: (() -> Void)? { didSet { nativeView.onInput = onInput } }
     var onInteractionLock: ((Bool) -> Void)? {
         didSet {
             nativeView.onInteractionLock = { [weak self] locked in

@@ -32,9 +32,15 @@ private final class OverlayTrackingView: NSView {
 private final class OverlayNativePanel: NSPanel {
     var onPointerDown: (() -> Void)?
     var allowsKey = true
+    var anchorsToScreenEdge = false
 
     override var canBecomeKey: Bool { allowsKey }
     override var canBecomeMain: Bool { false }
+
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        // Only the small hardware-aligned cap may enter the menu-bar region.
+        anchorsToScreenEdge ? frameRect : super.constrainFrameRect(frameRect, to: screen)
+    }
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .leftMouseDown { onPointerDown?() }
@@ -49,6 +55,10 @@ final class OverlayController: NSObject, NSWindowDelegate {
     private let triggerView: OverlayTrackingView
     private let panelRoot: OverlayTrackingView
     private let previewHint: NSTextField
+    private let triggerLabel = NSTextField(labelWithString: "›_  Knotch")
+    private let triggerGrip = NSView()
+    private(set) var layout: OverlayLayout?
+    var triggerFrame: NSRect { triggerPanel.frame }
     private let content: NSView
     private let sessionProvider: () -> (any TerminalSession)?
     private weak var presentedSession: (any TerminalSession)?
@@ -62,6 +72,11 @@ final class OverlayController: NSObject, NSWindowDelegate {
 
     private(set) var state = OverlayState()
     var onPresentationChange: ((OverlayPresentation) -> Void)?
+    #if HARNESS_TESTS
+    // Controller fixtures supply a complete pointer trace; do not mix in the
+    // owner's real pointer when a test window happens to appear underneath it.
+    var fixtureControlsTracking = false
+    #endif
 
     init(content: NSView, sessionProvider: @escaping () -> (any TerminalSession)?) {
         self.content = content
@@ -84,11 +99,11 @@ final class OverlayController: NSObject, NSWindowDelegate {
         configureTrigger()
         configurePanelContent()
 
-        triggerView.onEnter = { [weak self] in self?.send(.pointerEnteredTrigger) }
-        triggerView.onExit = { [weak self] in self?.send(.pointerExitedTrigger) }
+        triggerView.onEnter = { [weak self] in self?.tracked(.pointerEnteredTrigger) }
+        triggerView.onExit = { [weak self] in self?.tracked(.pointerExitedTrigger) }
         triggerView.onPress = { [weak self] in self?.activate() }
-        panelRoot.onEnter = { [weak self] in self?.send(.pointerEnteredPanel) }
-        panelRoot.onExit = { [weak self] in self?.send(.pointerExitedPanel) }
+        panelRoot.onEnter = { [weak self] in self?.tracked(.pointerEnteredPanel) }
+        panelRoot.onExit = { [weak self] in self?.tracked(.pointerExitedPanel) }
         triggerPanel.onPointerDown = { [weak self] in self?.activate() }
         (panel as? OverlayNativePanel)?.onPointerDown = { [weak self] in self?.activate() }
 
@@ -120,6 +135,13 @@ final class OverlayController: NSObject, NSWindowDelegate {
     }
 
     func activate() { send(.activate) }
+
+    private func tracked(_ event: OverlayEvent) {
+        #if HARNESS_TESTS
+        if fixtureControlsTracking { return }
+        #endif
+        send(event)
+    }
 
     func hide(restoreFocus: Bool = true) {
         let mayRestore = restoreFocus && NSApp.isActive && panel.isKeyWindow
@@ -155,6 +177,8 @@ final class OverlayController: NSObject, NSWindowDelegate {
 
     /// Native tests and owner UI may deliver explicit reducer events here.
     func send(_ event: OverlayEvent) {
+        let wasInteractive = state.presentation == .interactive
+        let restorePID = NSApp.isActive && panel.isKeyWindow ? priorFrontmostPID : nil
         if case .activate = event {
             if state.presentation == .interactive && !panel.isKeyWindow && pendingActivation == nil {
                 priorFrontmostPID = nil
@@ -174,6 +198,14 @@ final class OverlayController: NSObject, NSWindowDelegate {
         }
         let effects = state.send(event, now: ProcessInfo.processInfo.systemUptime)
         apply(effects)
+        if case .timerFired = event, wasInteractive, state.presentation == .collapsed {
+            priorFrontmostPID = nil
+            // An idle exit timer must never activate an old app after the user switches away.
+            if NSApp.isActive, let restorePID,
+               let previous = NSRunningApplication(processIdentifier: restorePID), !previous.isTerminated {
+                previous.activate()
+            }
+        }
         if case .activate = event,
            state.presentation == .interactive,
            !panel.isKeyWindow,
@@ -221,7 +253,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
 
     private func configureTrigger() {
         triggerView.wantsLayer = true
-        triggerView.layer?.backgroundColor = NSColor(calibratedWhite: 0.055, alpha: 1).cgColor
+        triggerView.layer?.backgroundColor = NSColor.black.cgColor
         triggerView.layer?.cornerRadius = 14
         triggerView.layer?.masksToBounds = true
         triggerView.autoresizingMask = [.width, .height]
@@ -230,7 +262,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
         triggerView.setAccessibilityRole(.button)
         triggerView.setAccessibilityLabel("Open Knotch terminal")
 
-        let label = NSTextField(labelWithString: "›_  Knotch")
+        let label = triggerLabel
         label.font = .monospacedSystemFont(ofSize: 12, weight: .semibold)
         label.textColor = .white
         label.alignment = .center
@@ -241,11 +273,22 @@ final class OverlayController: NSObject, NSWindowDelegate {
             label.centerXAnchor.constraint(equalTo: triggerView.centerXAnchor),
             label.centerYAnchor.constraint(equalTo: triggerView.centerYAnchor)
         ])
+        triggerGrip.wantsLayer = true
+        triggerGrip.layer?.backgroundColor = NSColor(white: 0.45, alpha: 1).cgColor
+        triggerGrip.layer?.cornerRadius = 1.5
+        triggerGrip.translatesAutoresizingMaskIntoConstraints = false
+        triggerView.addSubview(triggerGrip)
+        NSLayoutConstraint.activate([
+            triggerGrip.centerXAnchor.constraint(equalTo: triggerView.centerXAnchor),
+            triggerGrip.bottomAnchor.constraint(equalTo: triggerView.bottomAnchor, constant: -2),
+            triggerGrip.widthAnchor.constraint(equalToConstant: 32),
+            triggerGrip.heightAnchor.constraint(equalToConstant: 3)
+        ])
     }
 
     private func configurePanelContent() {
         panelRoot.wantsLayer = true
-        panelRoot.layer?.backgroundColor = NSColor(calibratedWhite: 0.055, alpha: 1).cgColor
+        panelRoot.layer?.backgroundColor = NSColor.black.cgColor
         panelRoot.layer?.cornerRadius = 18
         panelRoot.layer?.masksToBounds = true
         panelRoot.autoresizingMask = [.width, .height]
@@ -341,29 +384,37 @@ final class OverlayController: NSObject, NSWindowDelegate {
     private func present(_ presentation: OverlayPresentation) {
         isApplyingPresentation = true
         defer { isApplyingPresentation = false }
+        updateTriggerAppearance()
         switch presentation {
         case .collapsed:
-            triggerView.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner,
-                                                 .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+            cancelPendingActivation()
             previewHint.isHidden = true
             presentedSession?.setFocused(false)
             presentedSession?.setPresented(false)
             panel.orderOut(nil)
             triggerPanel.orderFront(nil)
         case .preview:
-            triggerView.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
             previewHint.isHidden = false
             sessionChanged()
             presentedSession?.setFocused(false)
             panel.orderFront(nil)
             triggerPanel.orderFront(nil)
         case .interactive:
-            triggerView.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
             previewHint.isHidden = true
             sessionChanged()
             panel.orderFront(nil)
             triggerPanel.orderFront(nil)
         }
+    }
+
+    private func updateTriggerAppearance() {
+        let notched = layout?.notchFrame != nil
+        triggerLabel.isHidden = notched
+        triggerGrip.isHidden = !notched || state.presentation != .collapsed
+        triggerView.layer?.cornerRadius = notched ? 10 : 14
+        triggerView.layer?.maskedCorners = notched
+            ? [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+            : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
     }
 
     private func placeOnSelectedScreen() {
@@ -378,8 +429,12 @@ final class OverlayController: NSObject, NSWindowDelegate {
                                        backingScale: screen.backingScaleFactor)
         geometry.panelGap = 0
         let layout = geometry.layout()
+        self.layout = layout
+        triggerPanel.anchorsToScreenEdge = layout.notchFrame != nil
+        triggerPanel.level = layout.notchFrame != nil ? .statusBar : .floating
         triggerPanel.setFrame(layout.triggerFrame, display: true)
         panel.setFrame(layout.panelFrame, display: true)
+        updateTriggerAppearance()
     }
 
     private func selectedScreen() -> NSScreen? {
