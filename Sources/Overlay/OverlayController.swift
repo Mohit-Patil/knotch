@@ -123,6 +123,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
     var onPresentationChange: ((OverlayPresentation) -> Void)?
     var onTerminalPanelSizeCommit: ((CGSize) -> Void)?
     var onExternalDrop: ((NSPasteboard) -> Bool)?
+    var onExternalDragToHandle: (() -> Void)?
     #if HARNESS_TESTS
     // Controller fixtures supply a complete pointer trace; do not mix in the
     // owner's real pointer when a test window happens to appear underneath it.
@@ -174,6 +175,10 @@ final class OverlayController: NSObject, NSWindowDelegate {
             view.registerForDraggedTypes(ExternalTerminalDrop.draggedTypes)
             view.onExternalDrag = { [weak self] entered in self?.externalDragChanged(entered) }
             view.onExternalDrop = { [weak self] board in self?.onExternalDrop?(board) ?? false }
+        }
+        triggerView.onExternalDrag = { [weak self] entered in
+            self?.externalDragChanged(entered)
+            if entered { self?.onExternalDragToHandle?() }
         }
         triggerPanel.onPointerDown = { [weak self] in self?.activate() }
         (panel as? OverlayNativePanel)?.onPointerDown = { [weak self] in self?.activate() }

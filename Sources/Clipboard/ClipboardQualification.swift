@@ -229,7 +229,17 @@ enum ClipboardQualification {
                   "Dragging an accepted external item over the notch reveals the existing terminal")
             let screenshotBoard = NSPasteboard.withUniqueName()
             screenshotBoard.setData(png, forType: .png)
-            let acceptedScreenshot = coordinator.acceptExternalDropForFixture(screenshotBoard)
+            coordinator.overlay?.onExternalDragToHandle?()
+            let acceptedToClipboard = coordinator.overlay?.onExternalDrop?(screenshotBoard) ?? false
+            check("Notch screenshot opens Clipboard only", acceptedToClipboard
+                  && coordinator.isClipboardSelectedForFixture
+                  && restored.entries.first?.kind == .image
+                  && !HarnessQualification.screen(session).contains("Knotch-Clipboard-Drops-")
+                  && session.surface == surface,
+                  "A handle drop saves the image and shows Clipboard without inserting a shell path")
+            coordinator.selectSession(id: session.id)
+            let acceptedScreenshot = coordinator.acceptExternalTerminalDropForFixture(screenshotBoard,
+                                                                                      sessionID: session.id)
             try? await HarnessQualification.waitFor({
                 HarnessQualification.screen(session).contains("Knotch-Clipboard-Drops-")
             }, description: "external screenshot path")
@@ -245,7 +255,8 @@ enum ClipboardQualification {
             try? filePNG.write(to: fileURL)
             let fileBoard = NSPasteboard.withUniqueName()
             fileBoard.writeObjects([fileURL as NSURL])
-            let acceptedFile = coordinator.acceptExternalDropForFixture(fileBoard)
+            let acceptedFile = coordinator.acceptExternalTerminalDropForFixture(fileBoard,
+                                                                                sessionID: session.id)
             try? await HarnessQualification.waitFor({
                 restored.entries.first?.data == filePNG
                     && HarnessQualification.screen(session).contains(restored.entries.first?.id.uuidString ?? "NO_ENTRY")
@@ -261,7 +272,8 @@ enum ClipboardQualification {
             try? Data("ordinary fixture".utf8).write(to: ordinaryFile)
             let ordinaryBoard = NSPasteboard.withUniqueName()
             ordinaryBoard.writeObjects([ordinaryFile as NSURL])
-            let acceptedOrdinary = coordinator.acceptExternalDropForFixture(ordinaryBoard)
+            let acceptedOrdinary = coordinator.acceptExternalTerminalDropForFixture(ordinaryBoard,
+                                                                                    sessionID: session.id)
             try? await HarnessQualification.waitFor({
                 HarnessQualification.screen(session).contains("notes\\ file.txt")
             }, description: "ordinary dragged file path")

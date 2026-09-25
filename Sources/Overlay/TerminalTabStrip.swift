@@ -16,6 +16,8 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
         var onRename: (() -> Void)?
         var onClipboardHover: (() -> Void)?
         var onClipboardDrop: ((UUID) -> Bool)?
+        var onExternalHover: (() -> Void)?
+        var onExternalDrop: ((NSPasteboard) -> Bool)?
         private var hoverTimer: Timer?
 
         override func mouseDown(with event: NSEvent) {
@@ -23,17 +25,25 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
         }
 
         override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-            guard ClipboardTerminalDrop.entryID(from: sender.draggingPasteboard) != nil,
-                  onClipboardDrop != nil else { return [] }
+            let isClipboardEntry = ClipboardTerminalDrop.entryID(from: sender.draggingPasteboard) != nil
+            guard isClipboardEntry ? onClipboardDrop != nil
+                    : (ExternalTerminalDrop.canAccept(sender.draggingPasteboard) && onExternalDrop != nil)
+            else { return [] }
             hoverTimer?.invalidate()
             hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.22, repeats: false) { [weak self] _ in
-                Task { @MainActor [weak self] in self?.onClipboardHover?() }
+                Task { @MainActor [weak self] in
+                    if isClipboardEntry { self?.onClipboardHover?() }
+                    else { self?.onExternalHover?() }
+                }
             }
             return .copy
         }
 
         override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-            ClipboardTerminalDrop.entryID(from: sender.draggingPasteboard) == nil ? [] : .copy
+            if ClipboardTerminalDrop.entryID(from: sender.draggingPasteboard) != nil {
+                return onClipboardDrop == nil ? [] : .copy
+            }
+            return ExternalTerminalDrop.canAccept(sender.draggingPasteboard) && onExternalDrop != nil ? .copy : []
         }
 
         override func draggingExited(_ sender: NSDraggingInfo?) {
@@ -44,8 +54,10 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
         override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
             hoverTimer?.invalidate()
             hoverTimer = nil
-            guard let id = ClipboardTerminalDrop.entryID(from: sender.draggingPasteboard) else { return false }
-            return onClipboardDrop?(id) ?? false
+            if let id = ClipboardTerminalDrop.entryID(from: sender.draggingPasteboard) {
+                return onClipboardDrop?(id) ?? false
+            }
+            return onExternalDrop?(sender.draggingPasteboard) ?? false
         }
     }
     var onSelect: ((UUID) -> Void)?
@@ -53,6 +65,8 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
     var onRename: ((UUID) -> Void)?
     var onClipboardHover: ((UUID) -> Void)?
     var onClipboardDrop: ((UUID, UUID) -> Bool)?
+    var onExternalHover: ((UUID) -> Void)?
+    var onExternalDrop: ((NSPasteboard, UUID) -> Bool)?
     var onMenuLock: ((Bool) -> Void)?
     private let scroll = NSScrollView()
     private let document = NSView()
@@ -102,10 +116,15 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
             button.target = self
             button.action = #selector(selectTab(_:))
             if !item.isSettings && !item.isClipboard {
-                button.registerForDraggedTypes([ClipboardTerminalDrop.pasteboardType])
+                button.registerForDraggedTypes([ClipboardTerminalDrop.pasteboardType]
+                                               + ExternalTerminalDrop.draggedTypes)
                 button.onClipboardHover = { [weak self] in self?.onClipboardHover?(item.id) }
                 button.onClipboardDrop = { [weak self] entryID in
                     self?.onClipboardDrop?(entryID, item.id) ?? false
+                }
+                button.onExternalHover = { [weak self] in self?.onExternalHover?(item.id) }
+                button.onExternalDrop = { [weak self] board in
+                    self?.onExternalDrop?(board, item.id) ?? false
                 }
             }
             if !item.isSettings && !item.isClipboard { button.onRename = { [weak self] in self?.onRename?(item.id) } }

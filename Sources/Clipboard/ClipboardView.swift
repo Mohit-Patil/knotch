@@ -128,7 +128,15 @@ struct ClipboardView: View {
             .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $focusedImageID)
             .onAppear { reconcileFocusedImage() }
-            .onChange(of: imageEntries.map(\.id)) { _, _ in reconcileFocusedImage() }
+            .onChange(of: imageEntries.map(\.id)) { oldIDs, newIDs in
+                if let added = newIDs.first(where: { !oldIDs.contains($0) }) {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.84)) {
+                        focusedImageID = added
+                    }
+                } else {
+                    reconcileFocusedImage()
+                }
+            }
         }
     }
 

@@ -33,6 +33,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     #if HARNESS_TESTS
     func useClipboardForFixture(_ history: ClipboardHistory) { clipboard?.stop(); clipboard = history }
+    var isClipboardSelectedForFixture: Bool { clipboardSelected }
     func hoverClipboardTabForFixture(sessionID: UUID) {
         clipboardDragChanged(true)
         selectSession(id: sessionID)
@@ -42,7 +43,9 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         defer { clipboardDragChanged(false) }
         return acceptClipboardDrop(entryID: entryID, sessionID: sessionID)
     }
-    func acceptExternalDropForFixture(_ board: NSPasteboard) -> Bool { acceptExternalDrop(board) }
+    func acceptExternalTerminalDropForFixture(_ board: NSPasteboard, sessionID: UUID) -> Bool {
+        acceptExternalDrop(board, destination: .terminal(sessionID))
+    }
     #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -96,7 +99,10 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             })
             overlay = controller
             window = controller.panel
-            controller.onExternalDrop = { [weak self] board in self?.acceptExternalDrop(board) ?? false }
+            controller.onExternalDrop = { [weak self] board in
+                self?.acceptExternalDrop(board, destination: .clipboard) ?? false
+            }
+            controller.onExternalDragToHandle = { [weak self] in self?.showClipboard() }
             controller.onPresentationChange = { [weak self] _ in self?.updateStatus() }
             controller.onTerminalPanelSizeCommit = { [weak self] size in
                 self?.setTerminalPanelSize(size)
@@ -255,6 +261,10 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tabs.onClipboardDrop = { [weak self] entryID, sessionID in
             self?.acceptClipboardDrop(entryID: entryID, sessionID: sessionID) ?? false
         }
+        tabs.onExternalHover = { [weak self] sessionID in self?.selectSession(id: sessionID) }
+        tabs.onExternalDrop = { [weak self] board, sessionID in
+            self?.acceptExternalDrop(board, destination: .terminal(sessionID)) ?? false
+        }
         tabs.onMenuLock = { [weak self] open in
             self?.overlay?.setInteractionLock("tab-menu", open)
             self?.overlay?.setSystemDialogPresented(open)
@@ -387,7 +397,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.acceptClipboardDrop(entryID: entryID, sessionID: id) ?? false
             }
             ghostty.nativeView.onExternalDrop = { [weak self] board in
-                self?.acceptExternalDrop(board) ?? false
+                self?.acceptExternalDrop(board, destination: .terminal(id)) ?? false
             }
             ghostty.nativeView.onExternalDrag = { [weak self] entered in
                 self?.overlay?.externalDragChanged(entered)
@@ -601,8 +611,13 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         _ = session.nativeView.insertDroppedText(text)
     }
 
+    private enum ExternalDropDestination {
+        case clipboard
+        case terminal(UUID)
+    }
+
     @discardableResult
-    private func acceptExternalDrop(_ board: NSPasteboard) -> Bool {
+    private func acceptExternalDrop(_ board: NSPasteboard, destination: ExternalDropDestination) -> Bool {
         guard let content = ExternalTerminalDrop.content(from: board) else {
             showError(TerminalFailure.unavailable("This dragged image or file could not be read."))
             return false
@@ -610,16 +625,16 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         switch content {
         case .files(let urls):
             if urls.count == 1, let image = ExternalTerminalDrop.image(at: urls[0]) {
-                receiveExternalEntry(image)
+                receiveExternalEntry(image, destination: destination)
             } else {
-                receiveExternalEntry(ClipboardEntry(kind: .files, fileURLs: urls))
+                receiveExternalEntry(ClipboardEntry(kind: .files, fileURLs: urls), destination: destination)
             }
         case .image(let data, _):
             guard let entry = ExternalTerminalDrop.image(from: data) else {
                 showError(TerminalFailure.unavailable("This screenshot exceeds the 4 MB clipboard image limit."))
                 return false
             }
-            receiveExternalEntry(entry)
+            receiveExternalEntry(entry, destination: destination)
         case .promises(let receivers):
             guard receivers.count == 1 else { return false }
             let folder = FileManager.default.temporaryDirectory
@@ -642,7 +657,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
                         self.showError(TerminalFailure.unavailable("The screenshot could not be saved as an image under 4 MB."))
                         return
                     }
-                    self.receiveExternalEntry(entry)
+                    self.receiveExternalEntry(entry, destination: destination)
                     try? FileManager.default.removeItem(at: fileURL)
                 }
             }
@@ -650,11 +665,14 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return true
     }
 
-    private func receiveExternalEntry(_ candidate: ClipboardEntry) {
+    private func receiveExternalEntry(_ candidate: ClipboardEntry, destination: ExternalDropDestination) {
         guard let entry = clipboard?.addDropped(candidate) else { return }
-        if store.session == nil || store.session?.isRunning != true { openHome() }
-        guard let sessionID = store.session?.id else { return }
-        insertClipboardEntry(entry, into: sessionID)
+        switch destination {
+        case .clipboard:
+            showClipboard()
+        case .terminal(let sessionID):
+            insertClipboardEntry(entry, into: sessionID)
+        }
     }
     @objc func showAccessSettings() {
         if shortcut == nil { shortcut = ShortcutController() }

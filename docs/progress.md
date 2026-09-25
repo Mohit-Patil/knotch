@@ -101,3 +101,7 @@ The owner screenshot showed a small image thumbnail with most of the Clipboard p
 ## Compact Clipboard image carousel
 
 The owner requested a sliding carousel instead of one image occupying the Clipboard panel. Image entries now appear as 226-point tiles in a horizontal, trackpad-scrollable strip with spring-animated previous/next controls. Text, links, rich text, and files stay in the list below. Each image still exposes Copy, Pin, Remove, and the private drag source. The test and Release builds passed, as did the 34-check Clipboard fixture, 10-check Settings fixture, and model tests. The installed signed executable matched Release and was restarted; native UI inspection confirmed the compact tile with the existing saved screenshot. Multi-image swiping and a physical drag remain untested.
+
+## Screenshot drop destination
+
+The owner screenshot showed a notch drop opening a shell and leaving a private PNG path at its prompt. The handle and panel background now save external images to Clipboard and select the carousel; they do not create a terminal session or insert text. Hovering over a terminal tab selects that live session, while dropping on the tab or Ghostty surface retains the explicit path-insertion flow. The 35-check native Clipboard fixture verifies the handle route leaves the existing Ghostty screen unchanged and the direct-terminal route still inserts without Return. A physical floating-thumbnail drag remains untested.

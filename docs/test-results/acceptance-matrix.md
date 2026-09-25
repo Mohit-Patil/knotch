@@ -182,3 +182,7 @@ Image cards now show a large aspect-fit preview directly in the Clipboard tab; a
 ## Compact Clipboard image carousel follow-up
 
 The full-width image card has been replaced with a horizontally scrollable shelf of compact image tiles; other Clipboard entries remain below it. Arrow navigation uses a spring animation, and the image preview remains the drag source. The test and Release builds passed, alongside the 34-check Clipboard fixture, 10-check Settings fixture, and model tests. The installed signed executable matched Release and was restarted. Native UI inspection confirmed one saved image appears in a compact tile; physical multi-image scrolling and dragging were NOT_RUN.
+
+## Screenshot drop destination follow-up
+
+A screenshot dropped on the notch handle or panel background now saves to local Clipboard history and selects the image carousel without inserting a terminal path. External drags over a terminal tab select that session; a drop on the tab or Ghostty surface still inserts a private image path without Return. The expanded native Clipboard fixture passed 35 checks, including a handle drop that left the live Ghostty screen unchanged and a separate direct-terminal drop that inserted the path. Physical Finder or floating-thumbnail dragging through the shipping UI is NOT_RUN.
