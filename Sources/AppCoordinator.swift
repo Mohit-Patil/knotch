@@ -10,7 +10,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var overlay: OverlayController?
     var shortcut: ShortcutController?
     var emptyView: NSView?
-    let statusLabel = NSTextField(labelWithString: "Open a terminal in a project")
+    let statusLabel = NSTextField(labelWithString: "Terminal")
+    private var closeButton: NSButton?
     let container = NSView()
     var quitting = false
 
@@ -107,25 +108,49 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func makeContent() -> NSView {
         let root = NSView()
+        root.wantsLayer = true
+        root.layer?.backgroundColor = NSColor.black.cgColor
         let toolbar = NSStackView()
         toolbar.orientation = .horizontal
-        toolbar.spacing = 10
-        for (title, action) in [("Open Project…", #selector(chooseProject)), ("Home Shell", #selector(openHome)), ("Minimise", #selector(hideTerminal)), ("Close…", #selector(closeSession)), ("Shortcut…", #selector(showAccessSettings))] {
-            let button = NSButton(title: title, target: self, action: action)
-            button.bezelStyle = .rounded
+        toolbar.spacing = 6
+        let terminalIcon = NSImageView(image: NSImage(systemSymbolName: "terminal", accessibilityDescription: nil)!)
+        terminalIcon.contentTintColor = .secondaryLabelColor
+        terminalIcon.setAccessibilityElement(false)
+        toolbar.addArrangedSubview(terminalIcon)
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        statusLabel.lineBreakMode = .byTruncatingMiddle
+        statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        toolbar.addArrangedSubview(statusLabel)
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        toolbar.addArrangedSubview(spacer)
+        for (symbol, title, action) in [
+            ("slider.horizontal.3", "Access & Shortcut…", #selector(showAccessSettings)),
+            ("chevron.up", "Minimise Terminal", #selector(hideTerminal)),
+            ("xmark", "Close Session…", #selector(closeSession))
+        ] {
+            let button = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: title)!, target: self, action: action)
+            button.bezelStyle = .accessoryBarAction
+            button.isBordered = false
+            button.imagePosition = .imageOnly
+            button.contentTintColor = .secondaryLabelColor
+            button.toolTip = title
             button.setAccessibilityLabel(title)
+            button.widthAnchor.constraint(equalToConstant: 28).isActive = true
+            button.heightAnchor.constraint(equalToConstant: 28).isActive = true
+            if action == #selector(closeSession) { closeButton = button; button.isEnabled = false }
             toolbar.addArrangedSubview(button)
         }
-        statusLabel.textColor = .secondaryLabelColor
-        statusLabel.font = .systemFont(ofSize: 12)
-        toolbar.addArrangedSubview(statusLabel)
         for view in [toolbar, container] { view.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(view) }
         NSLayoutConstraint.activate([
-            toolbar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12),
-            toolbar.topAnchor.constraint(equalTo: root.topAnchor, constant: 8),
-            toolbar.heightAnchor.constraint(equalToConstant: 30),
-            toolbar.trailingAnchor.constraint(lessThanOrEqualTo: root.trailingAnchor, constant: -12),
-            container.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 8),
+            terminalIcon.widthAnchor.constraint(equalToConstant: 18),
+            statusLabel.widthAnchor.constraint(lessThanOrEqualTo: root.widthAnchor, multiplier: 0.6),
+            toolbar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
+            toolbar.topAnchor.constraint(equalTo: root.topAnchor, constant: 6),
+            toolbar.heightAnchor.constraint(equalToConstant: 28),
+            toolbar.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
+            container.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 6),
             container.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             container.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             container.bottomAnchor.constraint(equalTo: root.bottomAnchor)
@@ -135,22 +160,44 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func showEmptyState() {
-        let empty = NSHostingView(rootView: VStack(spacing: 16) {
-            Image(systemName: "terminal").font(.system(size: 34, weight: .light))
-            Text("A terminal within reach").font(.title2.weight(.semibold))
-            Text("Open a project or a home shell above.\nRun your installed coding tools here.\nHover to open, click to type, move away to minimise.")
-                .multilineTextAlignment(.center).foregroundStyle(.secondary)
-            Text("Hiding keeps your session running. Quitting ends it.").font(.caption).foregroundStyle(.secondary)
+        let empty = NSHostingView(rootView: VStack(spacing: 22) {
+            Image(systemName: "terminal")
+                .font(.system(size: 30, weight: .light))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            HStack(spacing: 12) {
+                Button(action: { [weak self] in self?.chooseProject() }) {
+                    Label("Open Project…", systemImage: "folder")
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                }
+                .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(.black)
+                Button(action: { [weak self] in self?.openHome() }) {
+                    Label("Home Shell", systemImage: "terminal")
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                }
+                .buttonStyle(.bordered)
+            }
+            .controlSize(.large)
         }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(30))
         empty.frame = container.bounds
         empty.autoresizingMask = [.width, .height]
         container.addSubview(empty)
         emptyView = empty
+        updateStatus()
     }
 
     func updateStatus() {
-        let status = store.session?.status ?? "Open a terminal in a project"
-        statusLabel.stringValue = status
+        guard let session = store.session else {
+            statusLabel.stringValue = "Terminal"
+            statusLabel.toolTip = nil
+            closeButton?.isEnabled = false
+            return
+        }
+        let name = session.directory == FileManager.default.homeDirectoryForCurrentUser
+            ? "Home" : session.directory.lastPathComponent
+        statusLabel.stringValue = session.isRunning ? name : "\(name) · \(session.status)"
+        statusLabel.toolTip = session.directory.path
+        closeButton?.isEnabled = true
     }
 
     func attach(_ session: any TerminalSession) {
@@ -167,7 +214,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         session.onActivate = { [weak self] in self?.showTerminal() }
         session.onInput = { [weak self] in self?.overlay?.send(.terminalInput) }
         session.onInteractionLock = { [weak self] locked in self?.overlay?.setInteractionLock("terminal", locked) }
-        statusLabel.stringValue = session.status
+        updateStatus()
         window?.layoutIfNeeded()
         if let overlay { overlay.sessionChanged() }
         else {
@@ -228,7 +275,6 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         session.view.removeFromSuperview()
         store.closeAfterConfirmation()
-        statusLabel.stringValue = "Session closed · Open a project to start another"
         showEmptyState()
         overlay?.sessionChanged()
     }

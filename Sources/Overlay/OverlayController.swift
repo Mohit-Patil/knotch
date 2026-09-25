@@ -54,7 +54,6 @@ final class OverlayController: NSObject, NSWindowDelegate {
     private let triggerPanel: OverlayNativePanel
     private let triggerView: OverlayTrackingView
     private let panelRoot: OverlayTrackingView
-    private let previewHint: NSTextField
     private let triggerLabel = NSTextField(labelWithString: "›_  Knotch")
     private let triggerGrip = NSView()
     private(set) var layout: OverlayLayout?
@@ -100,7 +99,6 @@ final class OverlayController: NSObject, NSWindowDelegate {
                                    backing: .buffered, defer: false)
         triggerView = OverlayTrackingView(frame: NSRect(x: 0, y: 0, width: 160, height: 28))
         panelRoot = OverlayTrackingView(frame: NSRect(x: 0, y: 0, width: 960, height: 520))
-        previewHint = NSTextField(labelWithString: "Click to type")
         super.init()
 
         configureWindow(triggerPanel)
@@ -331,18 +329,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
         content.autoresizingMask = []
         panelRoot.addSubview(content)
 
-        previewHint.font = .systemFont(ofSize: 11, weight: .medium)
-        previewHint.textColor = .white
-        previewHint.alignment = .center
-        previewHint.wantsLayer = true
-        previewHint.layer?.backgroundColor = NSColor(calibratedWhite: 0.16, alpha: 0.95).cgColor
-        previewHint.layer?.cornerRadius = 8
-        previewHint.frame = NSRect(x: panelRoot.bounds.maxX - 124,
-                                   y: panelRoot.bounds.maxY - 28,
-                                   width: 112, height: 20)
-        previewHint.autoresizingMask = [.minXMargin, .minYMargin]
-        previewHint.isHidden = true
-        content.addSubview(previewHint)
+
     }
 
     private func apply(_ effects: [OverlayEffect]) {
@@ -420,7 +407,6 @@ final class OverlayController: NSObject, NSWindowDelegate {
         switch presentation {
         case .collapsed:
             cancelPendingActivation()
-            previewHint.isHidden = true
             presentedSession?.setFocused(false)
             panel.makeFirstResponder(nil)
             panel.resignKey()
@@ -428,13 +414,11 @@ final class OverlayController: NSObject, NSWindowDelegate {
             animatePresentation(expanded: false)
             triggerPanel.orderFront(nil)
         case .preview:
-            previewHint.isHidden = false
             sessionChanged()
             presentedSession?.setFocused(false)
             animatePresentation(expanded: true)
             triggerPanel.orderFront(nil)
         case .interactive:
-            previewHint.isHidden = true
             sessionChanged()
             animatePresentation(expanded: true)
             triggerPanel.orderFront(nil)
