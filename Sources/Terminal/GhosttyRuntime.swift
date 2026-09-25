@@ -108,20 +108,7 @@ final class GhosttyRuntime {
                     }
                 }
                 guard let text else { return }
-                if confirm {
-                    // Programmatic writes do not activate a hidden app. Deny while not interactive.
-                    guard session.nativeView.window?.isKeyWindow == true else { return }
-                    session.onInteractionLock?(true)
-                    let alert = NSAlert()
-                    alert.messageText = "Allow this terminal program to replace the clipboard?"
-                    alert.addButton(withTitle: "Deny")
-                    alert.addButton(withTitle: "Allow once")
-                    let allowed = alert.runModal() == .alertSecondButtonReturn
-                    session.onInteractionLock?(false)
-                    guard allowed else { return }
-                }
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
+                session.writeClipboard(text, confirm: confirm)
             }
         }
         guard let app = ghostty_app_new(&callbacks, config) else {

@@ -35,4 +35,7 @@ final class SessionStore {
         session?.closeAfterConfirmation()
         session = nil
     }
+    #if HARNESS_TESTS
+    func adoptFixture(_ session: any TerminalSession) { precondition(self.session == nil); self.session = session }
+    #endif
 }

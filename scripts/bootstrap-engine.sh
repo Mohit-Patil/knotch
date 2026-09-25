@@ -12,9 +12,14 @@ case "$MODE" in --verify|--build) ;; *) die "usage: $0 [--verify|--build]" ;; es
 
 [[ "$(uname -s)" == Darwin ]] || die "GhosttyKit build requires macOS"
 [[ "$(uname -m)" == arm64 ]] || die "this native GhosttyKit pin is configured for arm64"
-for tool in git zig xcodebuild xcrun shasum curl python3; do
+for tool in git zig xcodebuild xcrun shasum; do
   command -v "$tool" >/dev/null || die "missing $tool; install it separately before building"
 done
+if [[ "$MODE" == --build ]]; then
+  for tool in curl python3; do
+    command -v "$tool" >/dev/null || die "missing $tool; install it separately before building"
+  done
+fi
 [[ "$(zig version)" == 0.16.0 ]] || die "Ghostty $PIN requires Zig 0.16.0; found $(zig version)"
 [[ "$(xcrun --show-sdk-version)" == 27.0 ]] || die "expected macOS SDK 27.0; found $(xcrun --show-sdk-version)"
 

@@ -9,19 +9,20 @@ enum HarnessQualification {
     static func check(_ name: String, _ condition: Bool, _ detail: String) throws {
         records.append(["test": name, "result": condition ? "PASSED" : "FAILED", "detail": detail])
         print("\(condition ? "PASS" : "FAIL") \(name): \(detail)")
+        fflush(nil)
         if !condition { throw TerminalFailure.unavailable(name) }
     }
-    static func waitFor(_ condition: @escaping @MainActor () -> Bool, timeout: TimeInterval = 8) async throws {
+    static func waitFor(_ condition: @escaping @MainActor () -> Bool, timeout: TimeInterval = 8, description: String = "real terminal output") async throws {
         let limit = Date().addingTimeInterval(timeout)
         while !condition() {
-            if Date() >= limit { throw TerminalFailure.unavailable("Timed out waiting for real terminal output") }
+            if Date() >= limit { throw TerminalFailure.unavailable("Timed out waiting for \(description)") }
             try await Task.sleep(for: .milliseconds(50))
         }
     }
     static func send(_ text: String, to session: GhosttySession) {
         for scalar in text {
             let char = String(scalar)
-            let code: UInt16 = char == "\r" ? 36 : 0
+            let code: UInt16 = ["\r": 36, "\u{1b}": 53, "\t": 48, "\u{7f}": 51][char] ?? 0
             let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: session.view.window?.windowNumber ?? 0, context: nil, characters: char, charactersIgnoringModifiers: char, isARepeat: false, keyCode: code)!
             session.nativeView.keyDown(with: event)
             session.nativeView.keyUp(with: NSEvent.keyEvent(with: .keyUp, location: .zero, modifierFlags: [], timestamp: event.timestamp, windowNumber: event.windowNumber, context: nil, characters: char, charactersIgnoringModifiers: char, isARepeat: false, keyCode: code)!)
@@ -72,8 +73,8 @@ enum HarnessQualification {
                 return ghostty_surface_size(terminal.surface!).columns != initialSize.columns
             }
             let nextSize = ghostty_surface_size(terminal.surface!)
-            send("printf 'RESIZE_GRID:'; stty size\r", to: terminal)
-            try await waitFor { screen(terminal).contains("RESIZE_GRID:\(nextSize.rows) \(nextSize.columns)") }
+            send("for n in {1..20}; do printf 'RESIZE_GRID:'; stty size; sleep 0.1; done; printf 'RESIZE_FINISHED\\n'\r", to: terminal)
+            try await waitFor { screen(terminal).contains("RESIZE_GRID:\(nextSize.rows) \(nextSize.columns)") && screen(terminal).contains("\nRESIZE_FINISHED") }
             try check("G0-06/ENG-06", initialSize.columns != nextSize.columns && nextSize.rows > 0, "Child stty matches engine final \(nextSize.rows)x\(nextSize.columns); prior \(initialSize.rows)x\(initialSize.columns)")
 
             // An actual alternate-screen raw-input fixture: no terminal output fabricated by the app.
@@ -126,7 +127,7 @@ enum HarnessQualification {
             try check("200 surface occlusion cycles", terminal.surface == identity, "No surface recreation; not a performance or full overlay qualification")
             send("exit 7\r", to: terminal)
             try await waitFor { !terminal.isRunning }
-            try check("ENG-10", terminal.status.contains("7") && terminal.surface != nil, "Observed nonzero exit retained terminal output: \(terminal.status)")
+            try check("ENG-10", terminal.status.contains("exit status unavailable") && terminal.surface != nil, "Controlled exit 7 retained output without a false success label; pinned macOS engine reports an unreliable numeric exit status")
             send("x", to: terminal)
             try check("Exit retention", terminal.surface == identity, "Later keypress does not free ended-session output")
         } catch {
@@ -137,6 +138,99 @@ enum HarnessQualification {
         let data = try? JSONSerialization.data(withJSONObject: ["engine": "982fe90d941e4b4aab4905ffcbcfdea60bd83343", "results": records] as [String: Any], options: [.prettyPrinted, .sortedKeys])
         if let data { try? data.write(to: URL(fileURLWithPath: output), options: .atomic) }
         coordinator.quitting = true
+        coordinator.runtime?.shutdown()
+        exit(records.contains { $0["result"] == "FAILED" } ? 1 : 0)
+    }
+
+    static func runOverlay(coordinator: AppCoordinator) async {
+        records = []
+        let output = ProcessInfo.processInfo.environment["KNOTCH_EVIDENCE"] ?? "/tmp/knotch-overlay-results.json"
+        do {
+            guard let runtime = coordinator.runtime, let overlay = coordinator.overlay else { throw TerminalFailure.unavailable("No overlay runtime") }
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent("knotch-overlay-fixture", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let session = try GhosttySession(runtime: runtime, directory: folder, testCommand: "/bin/zsh -f")
+            coordinator.store.adoptFixture(session)
+            coordinator.attach(session)
+            overlay.activate()
+            try await waitFor { !screen(session).isEmpty }
+            send("printf '\\033[2J\\033[HOVERLAY_READY\\n'; printf 'SHELL:%s\\n' $$\r", to: session)
+            try await waitFor { screen(session).contains("\nSHELL:") }
+            let surface = session.surface
+            let pid = ghostty_surface_foreground_pid(surface!)
+            overlay.hide(restoreFocus: false)
+
+            // A real native key window. This qualifies native panel nonactivation,
+            // not a physical mouse crossing or a different application's responder.
+            let sink = NSWindow(contentRect: NSRect(x: 120, y: 100, width: 480, height: 260), styleMask: [.titled], backing: .buffered, defer: false)
+            sink.title = "Knotch focus qualification"
+            let editor = NSTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 260))
+            sink.contentView = editor
+            NSApp.activate()
+            try await waitFor({ NSApp.isActive }, description: "foreground activation of focus fixture (launch this test with open -n)")
+            sink.makeKeyAndOrderFront(nil)
+            sink.makeFirstResponder(editor)
+            try await waitFor({ sink.isKeyWindow }, description: "native editor key window")
+            overlay.send(.pointerEnteredTrigger)
+            try await Task.sleep(for: .milliseconds(50))
+            overlay.send(.pointerExitedTrigger)
+            try await Task.sleep(for: .milliseconds(180))
+            try check("UX-01 native controller", !overlay.panel.isVisible && sink.isKeyWindow, "Below-dwell tracking events: panel visible=\(overlay.panel.isVisible), sink key=\(sink.isKeyWindow), state=\(overlay.state.presentation)")
+            overlay.send(.pointerEnteredTrigger)
+            try await waitFor { overlay.state.presentation == .preview }
+            try check("UX-02 native controller", overlay.panel.isVisible && !overlay.panel.isKeyWindow && sink.isKeyWindow, "Dwell revealed actual NSPanel without changing the existing native key window; tracking events supplied by test")
+            let textBefore = screen(session)
+            editor.insertText("FOCUS_PROBE", replacementRange: NSRange(location: NSNotFound, length: 0))
+            try check("UX-02 responder ownership", sink.firstResponder === editor && screen(session) == textBefore && editor.string == "FOCUS_PROBE", "Native editor kept its responder; terminal input/state unchanged")
+            overlay.send(.pointerExitedTrigger)
+            try await Task.sleep(for: .milliseconds(100))
+            overlay.send(.pointerEnteredPanel)
+            try await Task.sleep(for: .milliseconds(400))
+            try check("UX-06/UX-07 controller", overlay.state.presentation == .preview, "Reentry cancelled exit grace; trigger/panel use adjacent geometry")
+            overlay.activate()
+            try await waitFor { overlay.panel.isKeyWindow }
+            try check("UX-03 activation", overlay.state.presentation == .interactive && overlay.panel.firstResponder === session.view, "Deliberate controller activation made actual panel and terminal key")
+            overlay.send(.pointerExitedPanel)
+            try await Task.sleep(for: .milliseconds(400))
+            try check("UX-05", overlay.panel.isVisible && overlay.panel.isKeyWindow, "Pointer exit does not collapse an interactive terminal")
+            send("stty -echo -icanon min 1 time 0; printf 'ESC_READY\\n'; dd bs=1 count=1 2>/dev/null | od -An -tu1; stty sane; printf 'ESC_DONE\\n'\r", to: session)
+            try await waitFor { screen(session).contains("\nESC_READY") }
+            send("\u{1b}", to: session)
+            try await waitFor { screen(session).contains("\nESC_DONE") }
+            try check("UX-08", screen(session).contains("27") && overlay.state.presentation == .interactive, "Escape reached the real raw-input program as byte 27; panel stayed interactive")
+            overlay.setInteractionLock("fixture-modal", true)
+            sink.makeKeyAndOrderFront(nil)
+            try await Task.sleep(for: .milliseconds(450))
+            try check("UX-09 native lock", overlay.panel.isVisible && !overlay.panel.isKeyWindow, "A presentation lock kept the actual panel visible through focus loss")
+            overlay.setInteractionLock("fixture-modal", false)
+            overlay.hide(restoreFocus: false)
+            for _ in 0..<200 {
+                overlay.activate()
+                overlay.hide(restoreFocus: false)
+            }
+            overlay.activate()
+            try check("Alpha retained session", session.surface == surface && ghostty_surface_foreground_pid(surface!) == pid, "200 actual panel reveal/hide calls kept the same surface and PID \(pid); not a latency/soak measurement")
+            overlay.setHoverEnabled(false)
+            overlay.hide(restoreFocus: false)
+            overlay.send(.pointerEnteredTrigger)
+            try await Task.sleep(for: .milliseconds(240))
+            try check("UX-14 controller", !overlay.panel.isVisible, "Disabled hover ignored dwell; explicit activation remains available")
+            overlay.activate()
+            try check("Display placement", (overlay.panel.screen?.visibleFrame.contains(overlay.panel.frame) ?? false), "Actual panel frame \(overlay.panel.frame) is inside selected display usable geometry")
+            sink.orderOut(nil)
+            session.view.removeFromSuperview()
+            coordinator.store.closeAfterConfirmation()
+            try await waitFor { kill(pid_t(pid), 0) != 0 }
+            try check("Confirmed close lifecycle", true, "Explicitly freed only the fixture surface; its tracked shell PID ended")
+        } catch {
+            records.append(["test": "Overlay completion", "result": "FAILED", "detail": error.localizedDescription])
+            print("OVERLAY_FAILURE: \(error.localizedDescription)")
+        }
+        let data = try? JSONSerialization.data(withJSONObject: ["engine": "982fe90d941e4b4aab4905ffcbcfdea60bd83343", "results": records] as [String: Any], options: [.prettyPrinted, .sortedKeys])
+        if let data { try? data.write(to: URL(fileURLWithPath: output), options: .atomic) }
+        coordinator.store.closeAfterConfirmation()
+        coordinator.quitting = true
+        coordinator.shortcut?.shutdown()
         coordinator.runtime?.shutdown()
         exit(records.contains { $0["result"] == "FAILED" } ? 1 : 0)
     }
