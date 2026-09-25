@@ -174,3 +174,7 @@ Terminal, Clipboard, Settings, and the empty state now use one 720×550-point de
 The [34-check native report](external-screenshot-drop.json) extends the isolated Clipboard fixture. It verifies external PNG detection, drag-triggered reveal, direct image and image-file capture into local history, insertion of the private image path into a real Ghostty shell without Return, and ordinary file path escaping. The same native Ghostty surface remains alive. A synthetic file promise is recognized, but an isolated named pasteboard did not fulfill it; a physical macOS floating-thumbnail drag remains NOT_RUN. Computer-control attempted a Finder-to-notch drag but its server returned `windowNotFoundAtPosition` before delivering the gesture, so it does not establish app behavior.
 
 The 10-check Settings fixture and model tests passed. Release/test builds and signature verification passed; the installed executable hash matched Release. The installed app was restarted and its notch handle visually opened and minimised. That UI check did not perform an external drop.
+
+## Inline Clipboard image preview follow-up
+
+Image cards now show a large aspect-fit preview directly in the Clipboard tab; actions remain visible above it and the preview retains the private drag source. The 34-check clipboard fixture, 10-check Settings fixture, model tests, and both builds passed. The installed signed executable matched Release and was restarted. Native UI inspection of the owner-shown image confirmed the larger preview; physical dragging from that preview was NOT_RUN.

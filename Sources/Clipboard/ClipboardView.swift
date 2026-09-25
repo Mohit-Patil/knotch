@@ -56,9 +56,6 @@ struct ClipboardView: View {
                                                          : "No items match your search."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Label("Drag an item onto a terminal tab", systemImage: "arrow.up.right")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         ForEach(visible) { entry in
@@ -82,6 +79,40 @@ struct ClipboardView: View {
 
     @ViewBuilder
     private func row(_ entry: ClipboardEntry) -> some View {
+        if entry.kind == .image, let data = entry.data, let image = NSImage(data: data) {
+            imageRow(entry, image: image)
+        } else {
+            compactRow(entry)
+        }
+    }
+
+    private func imageRow(_ entry: ClipboardEntry, image: NSImage) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Label("Image", systemImage: "photo")
+                    .font(.system(size: 13, weight: .medium))
+                Text(entry.createdAt.formatted(date: .omitted, time: .shortened))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                actions(for: entry)
+            }
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity)
+                .frame(height: 290)
+                .background(Color(white: 0.06), in: RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(ClipboardDragSource(entry: entry, onDragChange: onDragChange))
+                .help("Drag image to a terminal tab")
+                .accessibilityLabel("Image preview")
+        }
+        .padding(10)
+        .background(Color(white: 0.10), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func compactRow(_ entry: ClipboardEntry) -> some View {
         HStack(spacing: 12) {
             thumbnail(entry)
                 .frame(width: 64, height: 58)
@@ -98,6 +129,14 @@ struct ClipboardView: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            actions(for: entry)
+        }
+        .padding(10)
+        .background(Color(white: 0.10), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func actions(for entry: ClipboardEntry) -> some View {
+        HStack(spacing: 10) {
             Button("Copy") { history.copy(entry) }
                 .buttonStyle(.borderedProminent)
                 .accessibilityLabel("Copy \(entry.label) back to clipboard")
@@ -116,8 +155,6 @@ struct ClipboardView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Remove item")
         }
-        .padding(10)
-        .background(Color(white: 0.10), in: RoundedRectangle(cornerRadius: 10))
     }
 
     @ViewBuilder

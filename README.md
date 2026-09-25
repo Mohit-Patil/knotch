@@ -55,7 +55,7 @@ Use the tab's **×** to close only that session, with confirmation while its she
 
 ### Clipboard history
 
-The **Clipboard** tab records new text, links, rich text, images, and file references copied while Knotch is running. It offers search, image previews, pinning, removal, and **Copy** to put a previous item back on the system pasteboard. Copying an item does not paste into another app or run a terminal command. Switching to Clipboard leaves terminal processes and scrollback intact.
+The **Clipboard** tab records new text, links, rich text, images, and file references copied while Knotch is running. Images show a large inline preview that can be dragged to a terminal tab; Copy, Pin, and Remove remain above the preview. The tab also offers search and **Copy** to put a previous item back on the system pasteboard. Copying an item does not paste into another app or run a terminal command. Switching to Clipboard leaves terminal processes and scrollback intact.
 
 Drag an item's thumbnail from Clipboard onto a terminal tab. Holding it over a tab switches to that live session and focuses its terminal; release over the tab or terminal to insert the item at the cursor without pressing Return. Text, links, and rich text insert plain text. File items insert escaped paths. An image, including a screenshot, is written to an owner-only temporary file and its escaped path is inserted; the file is removed when Knotch quits normally. Multiline or control text asks before insertion. Tab switches keep the panel size steady; reveal and hide use spring motion and respect macOS Reduce Motion.
 

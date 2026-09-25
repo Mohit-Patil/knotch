@@ -32,7 +32,12 @@ struct ClipboardDragSource: NSViewRepresentable {
             let icon = entry.kind == .image
                 ? entry.data.flatMap(NSImage.init(data:))
                 : NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: nil)
-            item.setDraggingFrame(bounds, contents: icon ?? NSImage())
+            let point = convert(event.locationInWindow, from: nil)
+            let size = NSSize(width: min(bounds.width, 180), height: min(bounds.height, 120))
+            let frame = NSRect(x: max(0, min(bounds.width - size.width, point.x - size.width / 2)),
+                               y: max(0, min(bounds.height - size.height, point.y - size.height / 2)),
+                               width: size.width, height: size.height)
+            item.setDraggingFrame(frame, contents: icon ?? NSImage())
             onDragChange?(true)
             let session = beginDraggingSession(with: [item], event: event, source: self)
             session.animatesToStartingPositionsOnCancelOrFail = true
