@@ -105,3 +105,7 @@ The owner requested a sliding carousel instead of one image occupying the Clipbo
 ## Screenshot drop destination
 
 The owner screenshot showed a notch drop opening a shell and leaving a private PNG path at its prompt. The handle and panel background now save external images to Clipboard and select the carousel; they do not create a terminal session or insert text. Hovering over a terminal tab selects that live session, while dropping on the tab or Ghostty surface retains the explicit path-insertion flow. The 35-check native Clipboard fixture verifies the handle route leaves the existing Ghostty screen unchanged and the direct-terminal route still inserts without Return. A physical floating-thumbnail drag remains untested.
+
+## Saved screenshot to terminal drag
+
+Native UI automation opened a home shell, selected Clipboard, and physically dragged the saved 11:02 PM screenshot tile onto its terminal tab. The same live Ghostty terminal showed the private PNG path at the prompt without Return. The exported file existed with owner-only `0600` permissions. This verifies the carousel-to-terminal drag in the installed app. A separate drag from macOS's floating screenshot thumbnail into the notch has not been physically exercised.

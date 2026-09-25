@@ -186,3 +186,7 @@ The full-width image card has been replaced with a horizontally scrollable shelf
 ## Screenshot drop destination follow-up
 
 A screenshot dropped on the notch handle or panel background now saves to local Clipboard history and selects the image carousel without inserting a terminal path. External drags over a terminal tab select that session; a drop on the tab or Ghostty surface still inserts a private image path without Return. The expanded native Clipboard fixture passed 35 checks, including a handle drop that left the live Ghostty screen unchanged and a separate direct-terminal drop that inserted the path. Physical Finder or floating-thumbnail dragging through the shipping UI is NOT_RUN.
+
+## Saved screenshot carousel drag follow-up
+
+PASS: Native UI automation dragged a saved image tile from Clipboard onto a live terminal tab in the installed app. The tab selected and the same Ghostty surface displayed the private PNG path at its prompt without Return. The file existed with `0600` permissions. This proves carousel-to-terminal drag for the tested image and display; physical floating-thumbnail-to-notch delivery remains NOT_RUN.
