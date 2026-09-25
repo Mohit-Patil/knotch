@@ -41,3 +41,11 @@ Release/test builds passed, with 12 engine checks and 22 overlay checks, includi
 ## Screen-edge alignment and handle removal
 
 At `d53f2cc`, expanded the panel into the menu-bar band so its top aligns with the screen and camera cutout. Removed the collapsed white/gray grip, squared the expanded top corners, and constrained the header title beside the camera. Model tests, Release/test builds, and 24 native controller checks passed, including actual panel top equality with NSScreen.frame.maxY and camera-safe title/terminal frames. See [decision](decisions/0005-screen-edge-panel.md) and [results](test-results/overlay-screen-edge.json). Installed and signature-verified the updated `/Applications/Knotch.app`; the owner's running shell was preserved, so restarting is required to see the new placement.
+
+## Multiple terminal tabs
+
+At `ac6332d`, added a horizontal tab strip inside the expanded notch with independent reference-owned Ghostty sessions. Engine-emitted titles populate tabs; manual names override them until cleared. Plus/Command-T opens a shell in the selected tab's original project directory, folder-plus opens another project, and Command-1…9 selects a tab. Individual close targets a stable session ID and confirms before ending a live shell; quit confirms before closing every live session. Switching/minimising preserves processes, output and scrollback.
+
+Release/test builds and model tests passed. The full native run passed 12 engine checks and 39 overlay/tab checks. Installed `/Applications/Knotch.app` is signature-verified and its executable hash matches the Release build. Manual UI checks passed creation, rename, numbered switching, Command-T, background-tab close and quit-all warning; the two verification shells were ended and the app was reopened empty/collapsed. See [decision](decisions/0006-terminal-tabs.md), [engine results](test-results/harness-tabs.json), and [tab results](test-results/overlay-tabs.json).
+
+Work tracking currently means live titles, user names, observed shell running/ended status, and each terminal's retained output. No automatic agent completion claims or persistent transcript/history store were added. Tabs/names do not survive app exit. Physical global hover, VoiceOver, multi-display, 50-session leak and performance qualification remain open.

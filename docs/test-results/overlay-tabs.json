@@ -1,0 +1,202 @@
+{
+  "engine": "982fe90d941e4b4aab4905ffcbcfdea60bd83343",
+  "results": [
+    {
+      "detail": "Launch exposes only the notch trigger, without activating the terminal",
+      "result": "PASSED",
+      "test": "Collapsed launch"
+    },
+    {
+      "detail": "Actual cap (743.0, 1072.0, 225.0, 40.0) covers reported cutout (751.0, 1074.0, 209.0, 38.0) and overlaps terminal body (743.0, 1104.0, 225.0, 8.0); no detached pill",
+      "result": "PASSED",
+      "test": "Notch attachment"
+    },
+    {
+      "detail": "Real PTY child has no inherited NO_COLOR and advertises truecolor with xterm-ghostty",
+      "result": "PASSED",
+      "test": "Color-capable child environment"
+    },
+    {
+      "detail": "Actual native panel expands through intermediate geometry while Ghostty rows, columns and view size remain fixed",
+      "result": "PASSED",
+      "test": "Spring clip keeps terminal grid"
+    },
+    {
+      "detail": "Close interrupted by reopen settles visible with same terminal surface",
+      "result": "PASSED",
+      "test": "Interrupted spring reopen"
+    },
+    {
+      "detail": "Supplied lock event hides immediately without an animated privacy delay",
+      "result": "PASSED",
+      "test": "Lock bypasses motion"
+    },
+    {
+      "detail": "Fixture Reduce Motion override uses full resting geometry (allowing native half-point origin rounding) and a short opacity fade",
+      "result": "PASSED",
+      "test": "Reduce Motion fixed geometry"
+    },
+    {
+      "detail": "Below-dwell tracking events: panel visible=false, sink key=true, state=collapsed",
+      "result": "PASSED",
+      "test": "UX-01 native controller"
+    },
+    {
+      "detail": "Dwell revealed actual NSPanel without changing the existing native key window; tracking events supplied by test",
+      "result": "PASSED",
+      "test": "UX-02 native controller"
+    },
+    {
+      "detail": "Native editor kept its responder; terminal input/state unchanged",
+      "result": "PASSED",
+      "test": "UX-02 responder ownership"
+    },
+    {
+      "detail": "Reentry cancelled exit grace; trigger/panel use adjacent geometry",
+      "result": "PASSED",
+      "test": "UX-06/UX-07 controller"
+    },
+    {
+      "detail": "Deliberate controller activation made actual panel and terminal key",
+      "result": "PASSED",
+      "test": "UX-03 activation"
+    },
+    {
+      "detail": "Real terminal input postponed auto-collapse after pointer exit",
+      "result": "PASSED",
+      "test": "Typing postpones minimise"
+    },
+    {
+      "detail": "After typing grace expired, panel collapsed with same shell and surface",
+      "result": "PASSED",
+      "test": "Interactive auto-minimise"
+    },
+    {
+      "detail": "Leaving a hover preview collapsed the native panel after exit grace",
+      "result": "PASSED",
+      "test": "Preview auto-minimise"
+    },
+    {
+      "detail": "An active interaction lock held the panel beyond typing grace",
+      "result": "PASSED",
+      "test": "Selection prevents minimise"
+    },
+    {
+      "detail": "Escape reached the real raw-input program as byte 27; panel stayed interactive",
+      "result": "PASSED",
+      "test": "UX-08"
+    },
+    {
+      "detail": "A presentation lock kept the actual panel visible through focus loss",
+      "result": "PASSED",
+      "test": "UX-09 native lock"
+    },
+    {
+      "detail": "200 actual panel reveal/hide calls kept the same surface and PID 11240; not a latency/soak measurement",
+      "result": "PASSED",
+      "test": "Alpha retained session"
+    },
+    {
+      "detail": "Disabled hover ignored dwell; explicit activation remains available",
+      "result": "PASSED",
+      "test": "UX-14 controller"
+    },
+    {
+      "detail": "Native project title stays beside the cutout; terminal content starts below the camera",
+      "result": "PASSED",
+      "test": "Camera-safe content"
+    },
+    {
+      "detail": "Expanded native panel reaches the screen top and contains the measured camera cutout; header uses its side wings",
+      "result": "PASSED",
+      "test": "Expanded screen-edge alignment"
+    },
+    {
+      "detail": "Actual panel frame (375.0, 592.0, 960.0, 520.0) is inside selected display placement bounds (including the notch header band)",
+      "result": "PASSED",
+      "test": "Display placement"
+    },
+    {
+      "detail": "Three fixture sessions are ordered; adopting the last selected it",
+      "result": "PASSED",
+      "test": "Tabs ordered store"
+    },
+    {
+      "detail": "Native surfaces [30807654400, 30794579968, 30795497472]; shell PIDs [11240, 11261, 11262]; PTYs [\"/dev/ttys001\", \"/dev/ttys002\", \"/dev/ttys003\"]",
+      "result": "PASSED",
+      "test": "Tabs independent PTYs"
+    },
+    {
+      "detail": "Shell OSC 2 changed the selected tab title",
+      "result": "PASSED",
+      "test": "Tab OSC title"
+    },
+    {
+      "detail": "Untrusted OSC title omitted control and bidirectional formatting characters",
+      "result": "PASSED",
+      "test": "Tab title sanitation"
+    },
+    {
+      "detail": "Custom name survived a later shell title change",
+      "result": "PASSED",
+      "test": "Custom tab rename"
+    },
+    {
+      "detail": "Clearing custom name exposes the latest shell title",
+      "result": "PASSED",
+      "test": "Tab rename cleared"
+    },
+    {
+      "detail": "A custom rename removed control and bidirectional formatting characters",
+      "result": "PASSED",
+      "test": "Custom title sanitation"
+    },
+    {
+      "detail": "Selected tab owned the native responder and its input changed only its own surface",
+      "result": "PASSED",
+      "test": "Tab input isolation"
+    },
+    {
+      "detail": "Ghostty accepted a native page-up scroll action",
+      "result": "PASSED",
+      "test": "Tab scrollback fixture"
+    },
+    {
+      "detail": "Switching away and back retained the same surface and viewport scroll position",
+      "result": "PASSED",
+      "test": "Tab retained scrollback"
+    },
+    {
+      "detail": "Two inactive shells completed work while a third tab was selected; all original shells and surfaces remained",
+      "result": "PASSED",
+      "test": "Inactive tabs keep output"
+    },
+    {
+      "detail": "Closing tab two by ID preserved the selected third shell",
+      "result": "PASSED",
+      "test": "Close background tab"
+    },
+    {
+      "detail": "Closing selected tab chose the remaining neighboring tab",
+      "result": "PASSED",
+      "test": "Close selected tab"
+    },
+    {
+      "detail": "Coordinator displayed the surviving shell without respawning it",
+      "result": "PASSED",
+      "test": "Selected neighbor presented"
+    },
+    {
+      "detail": "Last fixture close left an empty store and safe empty presentation",
+      "result": "PASSED",
+      "test": "Close last tab"
+    },
+    {
+      "detail": "Explicitly freed only the fixture surface; its tracked shell PID ended",
+      "result": "PASSED",
+      "test": "Confirmed close lifecycle"
+    }
+  ],
+  "source_commit": "ac6332d078ab1cf28c41c1d3a7ddb172f02a3a7a",
+  "qualification_limits": "Native fixtures supply tracking events and use clean local shells. No agent requests or physical global-hover qualification."
+}

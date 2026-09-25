@@ -1,0 +1,67 @@
+{
+  "engine": "982fe90d941e4b4aab4905ffcbcfdea60bd83343",
+  "results": [
+    {
+      "detail": "Real shell PID 10951, tty /dev/ttys001; explicit cwd with spaces and Japanese characters matched",
+      "result": "PASSED",
+      "test": "G0-04/ENG-03"
+    },
+    {
+      "detail": "Native key/text path produced UTF-8 accented, CJK and emoji text in engine state",
+      "result": "PASSED",
+      "test": "G0-05 Unicode"
+    },
+    {
+      "detail": "Child stty matches engine final 22x94; prior 29x119",
+      "result": "PASSED",
+      "test": "G0-06/ENG-06"
+    },
+    {
+      "detail": "Real alternate screen entered, raw one-character input read, original screen restored",
+      "result": "PASSED",
+      "test": "G0-05/ENG-05"
+    },
+    {
+      "detail": "Native Command-C is resolved through Ghostty bindings",
+      "result": "PASSED",
+      "test": "Ghostty configured copy binding"
+    },
+    {
+      "detail": "Engine selection copied fixture text through native clipboard callback",
+      "result": "PASSED",
+      "test": "G0-05 selection/copy"
+    },
+    {
+      "detail": "Explicit engine paste preserved literal text; test separately pressed Return",
+      "result": "PASSED",
+      "test": "G0-05 paste"
+    },
+    {
+      "detail": "Output drained during 60 seconds hidden",
+      "result": "PASSED",
+      "test": "ENG-07 hidden output"
+    },
+    {
+      "detail": "Same surface and shell PID 10951 after hide/reveal",
+      "result": "PASSED",
+      "test": "G0-06 retained identity"
+    },
+    {
+      "detail": "No surface recreation; not a performance or full overlay qualification",
+      "result": "PASSED",
+      "test": "200 surface occlusion cycles"
+    },
+    {
+      "detail": "Controlled exit 7 retained output without a false success label; pinned macOS engine reports an unreliable numeric exit status",
+      "result": "PASSED",
+      "test": "ENG-10"
+    },
+    {
+      "detail": "Later keypress does not free ended-session output",
+      "result": "PASSED",
+      "test": "Exit retention"
+    }
+  ],
+  "source_commit": "ac6332d078ab1cf28c41c1d3a7ddb172f02a3a7a",
+  "qualification_limits": "Native fixtures supply tracking events and use clean local shells. No agent requests or physical global-hover qualification."
+}

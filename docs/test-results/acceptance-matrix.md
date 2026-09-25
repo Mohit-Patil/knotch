@@ -33,8 +33,8 @@ The numeric exit-status limitation is upstream and remains: controlled `exit 7` 
 | ENG-05 | PASSED | Real bounded alternate-screen raw-input fixture entered, read q, and restored previous screen. |
 | ENG-06 | NOT_RUN | Harness resize changed engine grid 28x110 to 21x86 and child stty matched after asynchronous resize. Repeated panel resize under TUI load is not qualified; alpha uses fixed expanded bounds. |
 | ENG-07 | PASSED | Bounded 65-tick child continued output while hidden for 60 seconds; same surface and shell PID after reveal. |
-| ENG-08 | NOT_RUN | Alpha deliberately supports one session; multi-session isolation deferred. |
-| ENG-09 | NOT_RUN | Owned fixture close ended its tracked PID. Multi-session/unrelated-terminal comparison not performed. |
+| ENG-08 | NOT_RUN | Tab follow-up: three independent PTYs passed selected-input isolation and retained scrollback/output. Copy works in the engine harness; selected-copy isolation across multiple tabs remains unqualified. |
+| ENG-09 | NOT_RUN | Tab follow-up: closing background, selected and last fixture sessions preserved other owned shells; installed UI confirmed a named background-tab close while another tab stayed selected. A separate unrelated-terminal comparison remains unqualified. |
 | ENG-10 | PASSED | Controlled exit 7 retains surface/output; numeric status unavailable because pinned macOS login wrapper reports unreliable 0. App never labels it success. |
 | ENG-11 | NOT_RUN | 50-create/close orphan and memory test remains. |
 | ENG-12 | PASSED | Copy of test app missing bundled zsh integration exited 2 with clear ENGINE_ERROR. No alternate engine or external resource fallback. |
@@ -133,3 +133,10 @@ The numeric exit-status limitation is upstream and remains: controlled `exit 7` 
 ## Spring-motion refinement
 
 The subsequent owner-requested spring implementation passed 21 native overlay checks plus model tests and Release/test builds. [Motion evidence](overlay-motion.json) adds intermediate native-window geometry with a stable terminal grid, interrupted reopening, immediate supplied lock-event hiding, and a Reduce Motion fixture. [Decision 0003](../decisions/0003-spring-motion.md) records timings and limits. This does not change the unqualified physical-hover, performance, external-display, or accessibility acceptance statuses above.
+
+
+## Multiple terminal tabs
+
+At `ac6332d`, Release/test builds and model tests passed, with 12 engine checks and 39 overlay/tab checks. [Overlay/tab evidence](overlay-tabs.json) covers three PTYs, title events and sanitation, manual-name precedence, input isolation, retained scroll position and inactive output, plus background/neighbor/last-tab closure. [Engine evidence](harness-tabs.json) reruns real input, copy/paste, resize, alternate screen and 60-second hidden output.
+
+Installed UI verification exercised Home Shell, plus-button creation, double-click rename, Command-1 selection, Command-T creation, named background-tab close confirmation, and quit-all confirmation. Only the fresh verification shells were ended. The app was reopened empty and collapsed. Full multi-tab copy isolation, 50-session leak qualification, VoiceOver, latency/soak and external displays remain open; running/ended labels are not agent task-completion claims.
