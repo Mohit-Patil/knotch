@@ -1,0 +1,24 @@
+{
+  "ghostty": {
+    "repository": "https://github.com/ghostty-org/ghostty.git",
+    "component": "full native GhosttyKit core (not libghostty-vt)",
+    "commit": "982fe90d941e4b4aab4905ffcbcfdea60bd83343",
+    "gitArchiveSha256": "0d0a3d9337fcb562bc43483b5bad97ba8fe0f08e000629502f6e7d130808b8b7",
+    "localPatches": [],
+    "zigVersion": "0.16.0",
+    "xcodeVersion": "27.0 (27A266a)",
+    "macosSdkVersion": "27.0",
+    "cachePolicy": "Zig default global cache, or caller-supplied ZIG_GLOBAL_CACHE_DIR; downloaded archives retained under .build/dependency-archives",
+    "buildOptions": [
+      "-Doptimize=ReleaseFast",
+      "-Demit-xcframework=true",
+      "-Dxcframework-target=native",
+      "-Demit-macos-app=false",
+      "-Demit-docs=false",
+      "-Demit-webdata=false"
+    ],
+    "staticLibraryPath": "macos/GhosttyKit.xcframework/macos-arm64/libghostty-internal.a",
+    "staticLibrarySha256": "973da699a65b76574e95c8e3b1bff377db56dc70fdb4418b3f589d9117b520c0",
+    "notice": "ThirdParty/Notices/Ghostty-LICENSE"
+  }
+}

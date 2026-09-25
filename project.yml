@@ -1,0 +1,46 @@
+name: Knotch
+options:
+  minimumXcodeGenVersion: 2.46.0
+  deploymentTarget:
+    macOS: '26.0'
+settings:
+  base:
+    SDKROOT: macosx
+    ARCHS: arm64
+    SWIFT_VERSION: '6.0'
+    MACOSX_DEPLOYMENT_TARGET: '26.0'
+    CLANG_ENABLE_MODULES: YES
+    ENABLE_HARDENED_RUNTIME: NO
+    OTHER_LDFLAGS: '$(inherited) -lc++'
+targets:
+  Knotch:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+        includes:
+          - '**/*.swift'
+      - path: Resources/terminal.conf
+        buildPhase: resources
+    dependencies:
+      - framework: .build/ghostty/macos/GhosttyKit.xcframework
+        embed: false
+      - sdk: Carbon.framework
+      - sdk: CoreFoundation.framework
+      - sdk: CoreGraphics.framework
+      - sdk: CoreText.framework
+      - sdk: CoreVideo.framework
+      - sdk: Foundation.framework
+      - sdk: IOSurface.framework
+      - sdk: QuartzCore.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.personal.Knotch
+        PRODUCT_NAME: Knotch
+        INFOPLIST_FILE: Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: '-'
+        LD_RUNPATH_SEARCH_PATHS: '$(inherited) @executable_path/../Frameworks'
+    scheme:
+      testTargets: []

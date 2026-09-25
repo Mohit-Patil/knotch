@@ -1,0 +1,151 @@
+// Native embedder callback patterns adapted from Ghostty.App.swift at the locked revision.
+// Copyright (c) 2024 Mitchell Hashimoto. MIT; see ThirdParty/Notices/Ghostty-LICENSE.
+import AppKit
+import GhosttyKit
+
+@MainActor
+final class GhosttyRuntime {
+    private(set) var app: ghostty_app_t?
+    private var config: ghostty_config_t?
+    private var observers: [NSObjectProtocol] = []
+
+    init() throws {
+        guard let resources = Bundle.main.resourceURL else {
+            throw TerminalFailure.unavailable("The app bundle has no Resources directory. Rebuild with scripts/build.sh.")
+        }
+        for relative in ["ghostty/shell-integration/zsh/ghostty-integration", "terminfo", "terminal.conf", "engine-revision.txt"] {
+            guard FileManager.default.fileExists(atPath: resources.appendingPathComponent(relative).path) else {
+                throw TerminalFailure.unavailable("Missing bundled resource: \(relative). Rebuild with scripts/build.sh; no external resource fallback is used.")
+            }
+        }
+        let revision = try String(contentsOf: resources.appendingPathComponent("engine-revision.txt"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard revision == "982fe90d941e4b4aab4905ffcbcfdea60bd83343" else {
+            throw TerminalFailure.unavailable("Ghostty resources do not match this adapter's pinned revision.")
+        }
+        setenv("GHOSTTY_RESOURCES_DIR", resources.appendingPathComponent("ghostty").path, 1)
+        setenv("GHOSTTY_LOG", "false", 1)
+        // Pass only the executable name. Never let app arguments become engine configuration.
+        let arg = strdup(CommandLine.arguments[0])!
+        defer { free(arg) }
+        var args: [UnsafeMutablePointer<CChar>?] = [arg, nil]
+        guard ghostty_init(1, &args) == GHOSTTY_SUCCESS else {
+            throw TerminalFailure.unavailable("Ghostty initialization failed.")
+        }
+        guard let config = ghostty_config_new() else { throw TerminalFailure.unavailable("Ghostty configuration allocation failed.") }
+        self.config = config
+        resources.appendingPathComponent("terminal.conf").path.withCString { ghostty_config_load_file(config, $0) }
+        ghostty_config_finalize(config)
+        guard ghostty_config_diagnostics_count(config) == 0 else {
+            var messages: [String] = []
+            for index in 0..<ghostty_config_diagnostics_count(config) {
+                if let message = ghostty_config_get_diagnostic(config, index).message { messages.append(String(cString: message)) }
+            }
+            ghostty_config_free(config)
+            self.config = nil
+            throw TerminalFailure.unavailable("Bundled terminal configuration is invalid: " + messages.joined(separator: "; "))
+        }
+        var callbacks = ghostty_runtime_config_s()
+        callbacks.userdata = Unmanaged.passUnretained(self).toOpaque()
+        callbacks.supports_selection_clipboard = false
+        callbacks.wakeup_cb = { pointer in
+            guard let pointer else { return }
+            // Wakeup may occur on an I/O thread. Runtime outlives every surface and queued tick.
+            let runtime = Unmanaged<GhosttyRuntime>.fromOpaque(pointer).takeUnretainedValue()
+            DispatchQueue.main.async { [weak runtime] in
+                if let app = runtime?.app { ghostty_app_tick(app) }
+            }
+        }
+        callbacks.action_cb = { _, target, action in
+            MainActor.assumeIsolated {
+                guard target.tag == GHOSTTY_TARGET_SURFACE,
+                      let surface = target.target.surface,
+                      let pointer = ghostty_surface_userdata(surface) else { return false }
+                return Unmanaged<GhosttySession>.fromOpaque(pointer).takeUnretainedValue().handle(action)
+            }
+        }
+        callbacks.close_surface_cb = { pointer, alive in
+            MainActor.assumeIsolated {
+                guard let pointer else { return }
+                let session = Unmanaged<GhosttySession>.fromOpaque(pointer).takeUnretainedValue()
+                // Never free an exited surface on a later keypress. Its output stays inspectable.
+                if alive { session.requestCloseFromEngine() } else if session.isRunning { session.didExit() }
+            }
+        }
+        callbacks.read_clipboard_cb = { pointer, location, state, mimes, count, list in
+            MainActor.assumeIsolated {
+                guard let pointer, location == GHOSTTY_CLIPBOARD_STANDARD, !list else { return GHOSTTY_CLIPBOARD_READ_UNSUPPORTED }
+                let session = Unmanaged<GhosttySession>.fromOpaque(pointer).takeUnretainedValue()
+                let supportsText = (0..<count).contains { index in mimes?[index].map { String(cString: $0) == "text/plain" } ?? false }
+                guard supportsText, let text = NSPasteboard.general.string(forType: .string) else { return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE }
+                session.completeClipboard(text, state: state, confirmed: false)
+                return GHOSTTY_CLIPBOARD_READ_STARTED
+            }
+        }
+        callbacks.confirm_read_clipboard_cb = { pointer, contents, state, kind in
+            MainActor.assumeIsolated {
+                guard let pointer else { return }
+                let session = Unmanaged<GhosttySession>.fromOpaque(pointer).takeUnretainedValue()
+                guard let surface = session.surface else { return }
+                guard kind == GHOSTTY_CLIPBOARD_REQUEST_PASTE,
+                      let contents, let items = contents.pointee.contents,
+                      contents.pointee.contents_len == 1, let data = items[0].data else {
+                    ghostty_surface_deny_clipboard_request(surface, state)
+                    return
+                }
+                let text = String(decoding: UnsafeRawBufferPointer(start: data, count: items[0].len), as: UTF8.self)
+                session.confirmPaste(text, state: state)
+            }
+        }
+        callbacks.write_clipboard_cb = { pointer, location, contents, count, confirm in
+            MainActor.assumeIsolated {
+                guard let pointer, location == GHOSTTY_CLIPBOARD_STANDARD, let contents else { return }
+                let session = Unmanaged<GhosttySession>.fromOpaque(pointer).takeUnretainedValue()
+                var text: String?
+                for index in 0..<count {
+                    let item = contents[index]
+                    if let mime = item.mime, String(cString: mime) == "text/plain", let data = item.data {
+                        text = String(decoding: UnsafeRawBufferPointer(start: data, count: item.len), as: UTF8.self)
+                    }
+                }
+                guard let text else { return }
+                if confirm {
+                    // Programmatic writes do not activate a hidden app. Deny while not interactive.
+                    guard session.nativeView.window?.isKeyWindow == true else { return }
+                    session.onInteractionLock?(true)
+                    let alert = NSAlert()
+                    alert.messageText = "Allow this terminal program to replace the clipboard?"
+                    alert.addButton(withTitle: "Deny")
+                    alert.addButton(withTitle: "Allow once")
+                    let allowed = alert.runModal() == .alertSecondButtonReturn
+                    session.onInteractionLock?(false)
+                    guard allowed else { return }
+                }
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+            }
+        }
+        guard let app = ghostty_app_new(&callbacks, config) else {
+            ghostty_config_free(config)
+            self.config = nil
+            throw TerminalFailure.unavailable("Ghostty runtime creation failed.")
+        }
+        self.app = app
+        ghostty_app_set_focus(app, NSApp.isActive)
+        for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification, NSTextInputContext.keyboardSelectionDidChangeNotification] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let app = self?.app else { return }
+                    ghostty_app_set_focus(app, NSApp.isActive)
+                    if name == NSTextInputContext.keyboardSelectionDidChangeNotification { ghostty_app_keyboard_changed(app) }
+                }
+            })
+        }
+    }
+
+    func shutdown() {
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers.removeAll()
+        if let app { ghostty_app_free(app); self.app = nil }
+        if let config { ghostty_config_free(config); self.config = nil }
+    }
+}
