@@ -129,3 +129,7 @@ The numeric exit-status limitation is upstream and remains: controlled `exit 7` 
 | PERF-04 | NOT_RUN | 200 surface cycles and 200 actual panel hide/reveal calls retained one identity/PID and did not crash. No warmup memory trend/retained-count instrumentation; not a performance pass. |
 | PERF-05 | NOT_RUN | Required physical configuration or measurement not exercised in this run. |
 | PERF-06 | NOT_RUN | Required physical configuration or measurement not exercised in this run. |
+
+## Spring-motion refinement
+
+The subsequent owner-requested spring implementation passed 21 native overlay checks plus model tests and Release/test builds. [Motion evidence](overlay-motion.json) adds intermediate native-window geometry with a stable terminal grid, interrupted reopening, immediate supplied lock-event hiding, and a Reduce Motion fixture. [Decision 0003](../decisions/0003-spring-motion.md) records timings and limits. This does not change the unqualified physical-hover, performance, external-display, or accessibility acceptance statuses above.

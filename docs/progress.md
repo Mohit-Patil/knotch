@@ -21,3 +21,7 @@ Final validation at source checkpoint `fc1081e`: optimized shipping/test builds 
 ## Owner correction: notch placement and minimise
 
 The screenshot exposed a detached pill/stacked-panel layout and launch into persistent typing mode. These are corrected: hardware-aligned black cap, terminal directly adjoining it, collapsed launch, and pointer-exit minimising even after activation, postponed by typing or interaction locks. This is the owner's explicit refinement of the original focus rule. Model tests and 17 revised native controller checks passed. See [decision and precise evidence boundaries](decisions/0002-notch-attachment-and-minimise.md).
+
+## Owner refinement: smooth spring motion
+
+Added display-linked spring reveal and damped retraction around a fixed-size native terminal. Motion can reverse without stale completion callbacks; Reduce Motion uses a short fade. Release/test builds and model tests pass, along with 21 native overlay checks. See [motion decision and evidence limits](decisions/0003-spring-motion.md) and [native results](test-results/overlay-motion.json). The existing shipping process has an active owner shell, so it was not restarted; the rebuilt app takes effect on the next launch.
