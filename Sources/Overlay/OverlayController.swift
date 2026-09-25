@@ -69,6 +69,9 @@ final class OverlayController: NSObject, NSWindowDelegate {
     private var pendingActivation: UInt64?
     private var priorFrontmostPID: pid_t?
     private var isApplyingPresentation = false
+    private let motion = OverlayMotion()
+    private var immediatePresentation = false
+    var isAnimating: Bool { motion.isAnimating }
 
     private(set) var state = OverlayState()
     var onPresentationChange: ((OverlayPresentation) -> Void)?
@@ -76,7 +79,15 @@ final class OverlayController: NSObject, NSWindowDelegate {
     // Controller fixtures supply a complete pointer trace; do not mix in the
     // owner's real pointer when a test window happens to appear underneath it.
     var fixtureControlsTracking = false
+    var reduceMotionForFixture: Bool?
     #endif
+
+    private var reduceMotion: Bool {
+        #if HARNESS_TESTS
+        if let reduceMotionForFixture { return reduceMotionForFixture }
+        #endif
+        return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
 
     init(content: NSView, sessionProvider: @escaping () -> (any TerminalSession)?) {
         self.content = content
@@ -121,6 +132,9 @@ final class OverlayController: NSObject, NSWindowDelegate {
                                                            object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(workspaceResigned),
                                                            name: NSWorkspace.willSleepNotification,
+                                                           object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(motionPreferenceChanged),
+                                                           name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
                                                            object: nil)
         placeOnSelectedScreen()
         triggerPanel.orderFront(nil)
@@ -177,6 +191,9 @@ final class OverlayController: NSObject, NSWindowDelegate {
 
     /// Native tests and owner UI may deliver explicit reducer events here.
     func send(_ event: OverlayEvent) {
+        let previousImmediate = immediatePresentation
+        if case .screenLocked = event { immediatePresentation = true }
+        defer { immediatePresentation = previousImmediate }
         let wasInteractive = state.presentation == .interactive
         let restorePID = NSApp.isActive && panel.isKeyWindow ? priorFrontmostPID : nil
         if case .activate = event {
@@ -198,6 +215,13 @@ final class OverlayController: NSObject, NSWindowDelegate {
         }
         let effects = state.send(event, now: ProcessInfo.processInfo.systemUptime)
         apply(effects)
+        if case .screenLocked = event {
+            // A lock can arrive after the reducer collapsed but while its visual
+            // retraction is still running. Always finish that animation now.
+            motion.cancel(at: 0)
+            renderMotionFrame(0, reducedMotion: reduceMotion)
+            finishCollapse()
+        }
         if case .timerFired = event, wasInteractive, state.presentation == .collapsed {
             priorFrontmostPID = nil
             // An idle exit timer must never activate an old app after the user switches away.
@@ -232,6 +256,12 @@ final class OverlayController: NSObject, NSWindowDelegate {
 
     @objc private func workspaceResigned(_ notification: Notification) {
         send(.screenLocked)
+    }
+
+    @objc private func motionPreferenceChanged(_ notification: Notification) {
+        motion.cancel(at: state.presentation == .collapsed ? 0 : 1)
+        renderMotionFrame(motion.value, reducedMotion: reduceMotion)
+        if state.presentation == .collapsed { finishCollapse() }
     }
 
     @objc private func applicationBecameActive(_ notification: Notification) {
@@ -296,7 +326,9 @@ final class OverlayController: NSObject, NSWindowDelegate {
 
         content.removeFromSuperview()
         content.frame = panelRoot.bounds
-        content.autoresizingMask = [.width, .height]
+        // The window is a moving clip around this fixed-size terminal host.
+        // Never autoresize the terminal for an animation frame.
+        content.autoresizingMask = []
         panelRoot.addSubview(content)
 
         previewHint.font = .systemFont(ofSize: 11, weight: .medium)
@@ -310,7 +342,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
                                    width: 112, height: 20)
         previewHint.autoresizingMask = [.minXMargin, .minYMargin]
         previewHint.isHidden = true
-        panelRoot.addSubview(previewHint)
+        content.addSubview(previewHint)
     }
 
     private func apply(_ effects: [OverlayEffect]) {
@@ -390,21 +422,71 @@ final class OverlayController: NSObject, NSWindowDelegate {
             cancelPendingActivation()
             previewHint.isHidden = true
             presentedSession?.setFocused(false)
-            presentedSession?.setPresented(false)
-            panel.orderOut(nil)
+            panel.makeFirstResponder(nil)
+            panel.resignKey()
+            panel.ignoresMouseEvents = true
+            animatePresentation(expanded: false)
             triggerPanel.orderFront(nil)
         case .preview:
             previewHint.isHidden = false
             sessionChanged()
             presentedSession?.setFocused(false)
-            panel.orderFront(nil)
+            animatePresentation(expanded: true)
             triggerPanel.orderFront(nil)
         case .interactive:
             previewHint.isHidden = true
             sessionChanged()
-            panel.orderFront(nil)
+            animatePresentation(expanded: true)
             triggerPanel.orderFront(nil)
         }
+    }
+
+    private func animatePresentation(expanded: Bool) {
+        let reduced = reduceMotion
+        if expanded {
+            panel.ignoresMouseEvents = false
+            if !panel.isVisible {
+                renderMotionFrame(0, reducedMotion: reduced)
+                panel.orderFront(nil)
+            }
+        }
+        motion.move(to: expanded ? 1 : 0, in: panelRoot, reducedMotion: reduced,
+                    animated: !immediatePresentation && (expanded || panel.isVisible),
+                    frame: { [weak self] value, reduced in
+                        self?.renderMotionFrame(value, reducedMotion: reduced)
+                    }, completion: { [weak self] in
+                        guard let self, self.state.presentation == .collapsed else { return }
+                        self.finishCollapse()
+                    })
+    }
+
+    private func finishCollapse() {
+        let previous = isApplyingPresentation
+        isApplyingPresentation = true
+        defer { isApplyingPresentation = previous }
+        panel.orderOut(nil)
+        presentedSession?.setPresented(false)
+        panel.alphaValue = 1
+    }
+
+    private func renderMotionFrame(_ value: Double, reducedMotion: Bool) {
+        guard let layout else { return }
+        let rest = layout.panelFrame
+        let progress = reducedMotion ? 1 : max(0, min(1.08, value))
+        let widthLimit = 2 * min(rest.midX - layout.usableFrame.minX,
+                                 layout.usableFrame.maxX - rest.midX)
+        let width = min(widthLimit, layout.triggerFrame.width + (rest.width - layout.triggerFrame.width) * progress)
+        let height = min(rest.maxY - layout.usableFrame.minY, 8 + (rest.height - 8) * progress)
+        let frame = NSRect(x: rest.midX - max(1, width) / 2, y: rest.maxY - max(1, height),
+                           width: max(1, width), height: max(1, height))
+        if panel.frame != frame { panel.setFrame(frame, display: false) }
+        content.frame = NSRect(x: (panelRoot.bounds.width - rest.width) / 2,
+                               y: panelRoot.bounds.height - rest.height,
+                               width: rest.width, height: rest.height)
+        let visible = max(0, min(1, value))
+        panel.alphaValue = reducedMotion ? visible : 1
+        content.alphaValue = reducedMotion ? 1 : max(0, min(1, (visible - 0.12) / 0.55))
+        panelRoot.layer?.cornerRadius = 10 + 8 * visible
     }
 
     private func updateTriggerAppearance() {
@@ -429,11 +511,15 @@ final class OverlayController: NSObject, NSWindowDelegate {
                                        backingScale: screen.backingScaleFactor)
         geometry.panelGap = 0
         let layout = geometry.layout()
+        if let old = self.layout, old.panelFrame == layout.panelFrame,
+           old.triggerFrame == layout.triggerFrame, old.backingScale == layout.backingScale { return }
         self.layout = layout
         triggerPanel.anchorsToScreenEdge = layout.notchFrame != nil
         triggerPanel.level = layout.notchFrame != nil ? .statusBar : .floating
         triggerPanel.setFrame(layout.triggerFrame, display: true)
-        panel.setFrame(layout.panelFrame, display: true)
+        motion.cancel(at: state.presentation == .collapsed ? 0 : 1)
+        renderMotionFrame(motion.value, reducedMotion: reduceMotion)
+        if state.presentation == .collapsed { finishCollapse() }
         updateTriggerAppearance()
     }
 

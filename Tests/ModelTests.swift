@@ -3,6 +3,7 @@ import CoreGraphics
 @main
 struct ModelTests {
     static func main() {
+        testMotion()
         testHoverAndStaleTimers()
         testExitGraceAndLocks()
         testActivationFocusPinAndHide()
@@ -13,6 +14,23 @@ struct ModelTests {
         testGeometry()
         testRandomizedTransitions()
         print("Model tests passed")
+    }
+
+    static func testMotion() {
+        let opening = OverlayMotionCurve(from: 0, to: 1)
+        let samples = (0...580).map { opening.sample(at: Double($0) / 1000).value }
+        expect(samples.max()! > 1.01 && samples.max()! < 1.08, "gentle bounded opening bounce")
+        expect(opening.sample(at: opening.duration).value == 1, "opening settles exactly")
+        let interrupted = opening.sample(at: 0.15)
+        let closing = OverlayMotionCurve(from: interrupted.value, to: 0, initialVelocity: interrupted.velocity)
+        expect(abs(closing.sample(at: 0).value - interrupted.value) < 0.00001,
+               "retarget preserves position")
+        expect(abs(closing.sample(at: 0).velocity - interrupted.velocity) < 0.00001,
+               "retarget preserves velocity")
+        expect(closing.sample(at: closing.duration).value == 0, "closing settles exactly")
+        let reduced = OverlayMotionCurve(from: 0, to: 1, reducedMotion: true)
+        let fade = (0...120).map { reduced.sample(at: Double($0) / 1000).value }
+        expect(zip(fade, fade.dropFirst()).allSatisfy { $0 <= $1 }, "Reduce Motion is monotonic")
     }
 
     static func testHoverAndStaleTimers() {

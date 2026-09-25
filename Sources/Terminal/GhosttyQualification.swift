@@ -148,6 +148,7 @@ enum HarnessQualification {
         do {
             guard let runtime = coordinator.runtime, let overlay = coordinator.overlay else { throw TerminalFailure.unavailable("No overlay runtime") }
             overlay.fixtureControlsTracking = true
+            overlay.reduceMotionForFixture = false
             try check("Collapsed launch", overlay.state.presentation == .collapsed && !overlay.panel.isVisible, "Launch exposes only the notch trigger, without activating the terminal")
             if let layout = overlay.layout, let notch = layout.notchFrame, let screen = overlay.panel.screen {
                 try check("Notch attachment", overlay.triggerFrame == layout.triggerFrame && overlay.triggerFrame.maxY == screen.frame.maxY && overlay.triggerFrame.contains(notch) && overlay.triggerFrame.intersects(overlay.panel.frame), "Actual cap \(overlay.triggerFrame) covers reported cutout \(notch) and overlaps terminal body \(overlay.panel.frame); no detached pill")
@@ -163,7 +164,30 @@ enum HarnessQualification {
             try await waitFor { screen(session).contains("\nSHELL:") }
             let surface = session.surface
             let pid = ghostty_surface_foreground_pid(surface!)
+            try await waitFor { !overlay.isAnimating }
+            let restingGrid = ghostty_surface_size(surface!)
+            let restingView = session.view.frame.size
             overlay.hide(restoreFocus: false)
+            try await waitFor { !overlay.panel.isVisible }
+            overlay.activate()
+            try await Task.sleep(for: .milliseconds(70))
+            let movingGrid = ghostty_surface_size(surface!)
+            try check("Spring clip keeps terminal grid", overlay.isAnimating && overlay.panel.frame.height < overlay.layout!.panelFrame.height && session.view.frame.size == restingView && movingGrid.columns == restingGrid.columns && movingGrid.rows == restingGrid.rows, "Actual native panel expands through intermediate geometry while Ghostty rows, columns and view size remain fixed")
+            overlay.hide(restoreFocus: false)
+            try await Task.sleep(for: .milliseconds(60))
+            overlay.activate()
+            try await waitFor { !overlay.isAnimating }
+            try check("Interrupted spring reopen", overlay.panel.isVisible && overlay.state.presentation == .interactive && session.surface == surface, "Close interrupted by reopen settles visible with same terminal surface")
+            overlay.hide(restoreFocus: false)
+            overlay.send(.screenLocked)
+            try check("Lock bypasses motion", !overlay.panel.isVisible && !overlay.isAnimating, "Supplied lock event hides immediately without an animated privacy delay")
+            overlay.reduceMotionForFixture = true
+            overlay.activate()
+            try check("Reduce Motion fixed geometry", overlay.panel.frame.size == overlay.layout!.panelFrame.size && abs(overlay.panel.frame.midX - overlay.layout!.panelFrame.midX) <= 0.5, "Fixture Reduce Motion override uses full resting geometry (allowing native half-point origin rounding) and a short opacity fade")
+            try await waitFor { !overlay.isAnimating }
+            overlay.hide(restoreFocus: false)
+            try await waitFor { !overlay.panel.isVisible }
+            overlay.reduceMotionForFixture = false
 
             // A real native key window. This qualifies native panel nonactivation,
             // not a physical mouse crossing or a different application's responder.
@@ -237,10 +261,12 @@ enum HarnessQualification {
             try check("Alpha retained session", session.surface == surface && ghostty_surface_foreground_pid(surface!) == pid, "200 actual panel reveal/hide calls kept the same surface and PID \(pid); not a latency/soak measurement")
             overlay.setHoverEnabled(false)
             overlay.hide(restoreFocus: false)
+            try await waitFor { !overlay.panel.isVisible }
             overlay.send(.pointerEnteredTrigger)
             try await Task.sleep(for: .milliseconds(240))
             try check("UX-14 controller", !overlay.panel.isVisible, "Disabled hover ignored dwell; explicit activation remains available")
             overlay.activate()
+            try await waitFor { !overlay.isAnimating }
             try check("Display placement", (overlay.panel.screen?.visibleFrame.contains(overlay.panel.frame) ?? false), "Actual panel frame \(overlay.panel.frame) is inside selected display usable geometry")
             sink.orderOut(nil)
             session.view.removeFromSuperview()
