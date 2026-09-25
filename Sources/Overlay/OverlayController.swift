@@ -38,7 +38,7 @@ private final class OverlayNativePanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
-        // Only the small hardware-aligned cap may enter the menu-bar region.
+        // The notch silhouette and its expanded panel are anchored to the screen edge.
         anchorsToScreenEdge ? frameRect : super.constrainFrameRect(frameRect, to: screen)
     }
 
@@ -55,7 +55,6 @@ final class OverlayController: NSObject, NSWindowDelegate {
     private let triggerView: OverlayTrackingView
     private let panelRoot: OverlayTrackingView
     private let triggerLabel = NSTextField(labelWithString: "›_  Knotch")
-    private let triggerGrip = NSView()
     private(set) var layout: OverlayLayout?
     var triggerFrame: NSRect { triggerPanel.frame }
     private let content: NSView
@@ -301,17 +300,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
             label.centerXAnchor.constraint(equalTo: triggerView.centerXAnchor),
             label.centerYAnchor.constraint(equalTo: triggerView.centerYAnchor)
         ])
-        triggerGrip.wantsLayer = true
-        triggerGrip.layer?.backgroundColor = NSColor(white: 0.45, alpha: 1).cgColor
-        triggerGrip.layer?.cornerRadius = 1.5
-        triggerGrip.translatesAutoresizingMaskIntoConstraints = false
-        triggerView.addSubview(triggerGrip)
-        NSLayoutConstraint.activate([
-            triggerGrip.centerXAnchor.constraint(equalTo: triggerView.centerXAnchor),
-            triggerGrip.bottomAnchor.constraint(equalTo: triggerView.bottomAnchor, constant: -2),
-            triggerGrip.widthAnchor.constraint(equalToConstant: 32),
-            triggerGrip.heightAnchor.constraint(equalToConstant: 3)
-        ])
+
     }
 
     private func configurePanelContent() {
@@ -476,7 +465,6 @@ final class OverlayController: NSObject, NSWindowDelegate {
     private func updateTriggerAppearance() {
         let notched = layout?.notchFrame != nil
         triggerLabel.isHidden = notched
-        triggerGrip.isHidden = !notched || state.presentation != .collapsed
         triggerView.layer?.cornerRadius = notched ? 10 : 14
         triggerView.layer?.maskedCorners = notched
             ? [.layerMinXMinYCorner, .layerMaxXMinYCorner]
@@ -498,7 +486,13 @@ final class OverlayController: NSObject, NSWindowDelegate {
         if let old = self.layout, old.panelFrame == layout.panelFrame,
            old.triggerFrame == layout.triggerFrame, old.backingScale == layout.backingScale { return }
         self.layout = layout
-        triggerPanel.anchorsToScreenEdge = layout.notchFrame != nil
+        let notched = layout.notchFrame != nil
+        (panel as? OverlayNativePanel)?.anchorsToScreenEdge = notched
+        panel.level = notched ? .statusBar : .floating
+        panelRoot.layer?.maskedCorners = notched
+            ? [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+            : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        triggerPanel.anchorsToScreenEdge = notched
         triggerPanel.level = layout.notchFrame != nil ? .statusBar : .floating
         triggerPanel.setFrame(layout.triggerFrame, display: true)
         motion.cancel(at: state.presentation == .collapsed ? 0 : 1)

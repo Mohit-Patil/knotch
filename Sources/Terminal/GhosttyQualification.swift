@@ -271,7 +271,13 @@ enum HarnessQualification {
             try check("UX-14 controller", !overlay.panel.isVisible, "Disabled hover ignored dwell; explicit activation remains available")
             overlay.activate()
             try await waitFor { !overlay.isAnimating }
-            try check("Display placement", (overlay.panel.screen?.visibleFrame.contains(overlay.panel.frame) ?? false), "Actual panel frame \(overlay.panel.frame) is inside selected display usable geometry")
+            if let notch = overlay.layout?.notchFrame {
+                let titleFrame = overlay.panel.convertToScreen(coordinator.statusLabel.convert(coordinator.statusLabel.bounds, to: nil))
+                let terminalFrame = overlay.panel.convertToScreen(session.view.convert(session.view.bounds, to: nil))
+                try check("Camera-safe content", !titleFrame.intersects(notch) && terminalFrame.maxY <= notch.minY, "Native project title stays beside the cutout; terminal content starts below the camera")
+                try check("Expanded screen-edge alignment", overlay.panel.frame.maxY == overlay.panel.screen!.frame.maxY && overlay.panel.frame.contains(notch) && overlay.panel.level == .statusBar, "Expanded native panel reaches the screen top and contains the measured camera cutout; header uses its side wings")
+            }
+            try check("Display placement", (overlay.layout?.usableFrame.contains(overlay.panel.frame) ?? false), "Actual panel frame \(overlay.panel.frame) is inside selected display placement bounds (including the notch header band)")
             sink.orderOut(nil)
             session.view.removeFromSuperview()
             coordinator.store.closeAfterConfirmation()

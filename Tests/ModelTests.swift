@@ -232,8 +232,8 @@ struct ModelTests {
                                        auxiliaryTopRight: CGRect(x: -810, y: 966, width: 810, height: 34),
                                        backingScale: 2)
         let notch = geometry.layout()
-        expect(screen.contains(notch.triggerFrame) && visible.contains(notch.panelFrame),
-               "negative-origin silhouette stays on screen and body stays usable")
+        expect(screen.contains(notch.triggerFrame) && screen.contains(notch.panelFrame),
+               "negative-origin silhouette and body stay on screen")
         expect(notch.notchFrame == CGRect(x: -1110, y: 966, width: 300, height: 34),
                "negative-origin auxiliary areas identify the physical cutout")
         expect(near(notch.triggerFrame.maxY, screen.maxY)
@@ -251,17 +251,17 @@ struct ModelTests {
         let live = liveGeometry.layout()
         expect(live.notchFrame == CGRect(x: 751, y: 1074, width: 209, height: 38),
                "live screen cutout coordinates must be preserved")
-        expect(live.triggerFrame == CGRect(x: 743, y: 1065, width: 225, height: 47),
-               "trigger wraps cutout with 8 pt wings and visible lip")
-        expect(near(live.panelFrame.maxY, 1073)
+        expect(live.triggerFrame == CGRect(x: 743, y: 1072, width: 225, height: 40),
+               "trigger wraps cutout with 8 pt wings and a 2 pt lip")
+        expect(near(live.panelFrame.maxY, 1112)
                && near(live.panelFrame.midX, 855.5),
-               "panel body joins lip at the usable top and cutout center")
+               "panel starts at actual screen top and cutout center")
         expect(live.triggerFrame.intersects(live.panelFrame),
                "regression: panel and physical-notch trigger must not detach")
         liveGeometry.visibleFrame = liveGeometry.screenFrame
         let notchWithHiddenMenu = liveGeometry.layout()
-        expect(near(notchWithHiddenMenu.panelFrame.maxY, 1074),
-               "auto-hidden menu cannot put readable content in the cutout")
+        expect(near(notchWithHiddenMenu.panelFrame.maxY, 1112),
+               "auto-hidden menu does not move the screen-edge panel")
 
         geometry.auxiliaryTopLeft = nil
         geometry.auxiliaryTopRight = nil

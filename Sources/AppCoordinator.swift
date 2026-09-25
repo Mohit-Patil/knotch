@@ -153,7 +153,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         for view in [toolbar, container] { view.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(view) }
         NSLayoutConstraint.activate([
             terminalIcon.widthAnchor.constraint(equalToConstant: 18),
-            statusLabel.widthAnchor.constraint(lessThanOrEqualTo: root.widthAnchor, multiplier: 0.6),
+            statusLabel.widthAnchor.constraint(lessThanOrEqualTo: root.widthAnchor, multiplier: 0.28),
             toolbar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
             toolbar.topAnchor.constraint(equalTo: root.topAnchor, constant: 6),
             toolbar.heightAnchor.constraint(equalToConstant: 28),

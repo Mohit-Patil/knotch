@@ -41,22 +41,22 @@ struct DisplayGeometry {
     }
 
     private func notchedLayout(notch: CGRect, usable: CGRect) -> OverlayLayout {
-        // The readable body ends at the actual usable top. The silhouette
-        // surrounds the measured cutout and overlaps the body by an 8 pt lip.
-        let panelTop = clamp(min(usable.maxY, notch.minY,
-                                 screenFrame.maxY - max(0, safeAreaTop)),
-                             min: usable.minY + 1, max: usable.maxY)
-        let lip: CGFloat = 8
+        // The expanded window includes the menu-bar band. Its header occupies
+        // the wings beside the cutout instead of adding a second row below it.
+        let panelUsable = CGRect(x: usable.minX, y: usable.minY,
+                                 width: usable.width, height: screenFrame.maxY - usable.minY)
+        let panelTop = screenFrame.maxY
+        let lip: CGFloat = 2
         let wing: CGFloat = 8
         let triggerX = clamp(notch.minX - wing,
                              min: screenFrame.minX, max: screenFrame.maxX - min(screenFrame.width, notch.width + 2 * wing))
         let triggerWidth = min(screenFrame.width, notch.width + 2 * wing)
-        let triggerBottom = max(screenFrame.minY, panelTop - lip)
+        let triggerBottom = max(screenFrame.minY, notch.minY - lip)
         let trigger = CGRect(x: triggerX, y: triggerBottom,
                              width: triggerWidth, height: screenFrame.maxY - triggerBottom)
-        let panel = panelFrame(centerX: notch.midX, top: panelTop, usable: usable)
+        let panel = panelFrame(centerX: notch.midX, top: panelTop, usable: panelUsable)
         return OverlayLayout(triggerFrame: trigger, panelFrame: panel,
-                             usableFrame: usable, notchFrame: notch,
+                             usableFrame: panelUsable, notchFrame: notch,
                              backingScale: max(1, backingScale))
     }
 
