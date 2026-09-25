@@ -25,3 +25,9 @@ The screenshot exposed a detached pill/stacked-panel layout and launch into pers
 ## Owner refinement: smooth spring motion
 
 Added display-linked spring reveal and damped retraction around a fixed-size native terminal. Motion can reverse without stale completion callbacks; Reduce Motion uses a short fade. Release/test builds and model tests pass, along with 21 native overlay checks. See [motion decision and evidence limits](decisions/0003-spring-motion.md) and [native results](test-results/overlay-motion.json). The existing shipping process has an active owner shell, so it was not restarted; the rebuilt app takes effect on the next launch.
+
+## Interface refinement: remove redundant subtitles
+
+At `a5720c1`, replaced the five-button toolbar and generic status sentence with a compact project-name header plus accessible settings, minimise, and close controls. Removed the empty-state tagline, instructional paragraphs, session-lifetime footer, and floating click-to-type hint. The empty state now offers direct Open Project and Home Shell actions. Close is disabled without a session; essential end-session/quit warnings and ended-session status remain.
+
+Release and test builds passed, as did all 21 native overlay regression checks ([results](test-results/overlay-chrome.json)). Installed and signature-verified `/Applications/Knotch.app`. Native UI inspection confirmed the simplified empty state, named icon controls, Home Shell opening with the Home header, close confirmation, return to the empty state after ending only the fresh verification shell, and minimise back to the notch. No physical-hover or frame-pacing qualification was added. The installed app is running collapsed with no test shell left behind.
