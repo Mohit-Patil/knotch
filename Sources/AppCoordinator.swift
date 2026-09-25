@@ -14,6 +14,9 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var closeButton: NSButton?
     let container = NSView()
     private let tabs = TerminalTabStrip()
+    private let settingsID = UUID()
+    private var settingsSelected = false
+    private var settingsView: NSView?
     private var tabHeight: NSLayoutConstraint?
     private weak var attachedSession: (any TerminalSession)?
     var quitting = false
@@ -22,7 +25,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let harness = CommandLine.arguments.contains("--harness") || CommandLine.arguments.contains("--self-test")
         var qualification = false
         #if HARNESS_TESTS
-        qualification = CommandLine.arguments.contains("--overlay-self-test")
+        qualification = CommandLine.arguments.contains("--overlay-self-test") || CommandLine.arguments.contains("--settings-self-test")
         #endif
         // The focus fixture also owns an ordinary editor window; production remains accessory.
         NSApp.setActivationPolicy(harness || qualification ? .regular : .accessory)
@@ -49,7 +52,10 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if harness {
             makeHarnessWindow()
         } else {
-            let controller = OverlayController(content: makeContent(), sessionProvider: { [weak self] in self?.store.session })
+            let controller = OverlayController(content: makeContent(), sessionProvider: { [weak self] in
+                guard let self, !self.settingsSelected else { return nil }
+                return self.store.session
+            })
             overlay = controller
             window = controller.panel
             controller.onPresentationChange = { [weak self] _ in self?.updateStatus() }
@@ -76,6 +82,10 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             Task { @MainActor in await HarnessQualification.runOverlay(coordinator: self) }
             return
         }
+        if CommandLine.arguments.contains("--settings-self-test") {
+            Task { @MainActor in await HarnessQualification.runSettings(coordinator: self) }
+            return
+        }
         #endif
         if let index = CommandLine.arguments.firstIndex(of: "--directory"), index + 1 < CommandLine.arguments.count {
             open(directory: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true))
@@ -94,7 +104,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         appMenu.addItem(withTitle: "Open Home Shell", action: #selector(openHome), keyEquivalent: "").target = self
         appMenu.addItem(withTitle: "Minimise Terminal", action: #selector(hideTerminal), keyEquivalent: "h").target = self
         appMenu.addItem(withTitle: "Close Session…", action: #selector(closeSession), keyEquivalent: "w").target = self
-        appMenu.addItem(withTitle: "Access & Shortcut…", action: #selector(showAccessSettings), keyEquivalent: ",").target = self
+        appMenu.addItem(withTitle: "Settings", action: #selector(showAccessSettings), keyEquivalent: ",").target = self
         appMenu.addItem(.separator())
         for number in 1...9 {
             let item = appMenu.addItem(withTitle: "Select Tab \(number)", action: #selector(selectNumberedTab(_:)), keyEquivalent: String(number))
@@ -147,7 +157,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         for (symbol, title, action) in [
             ("plus", "New Tab", #selector(newTab)),
             ("folder.badge.plus", "New Project Tab…", #selector(chooseProject)),
-            ("slider.horizontal.3", "Access & Shortcut…", #selector(showAccessSettings)),
+            ("gearshape", "Settings", #selector(showAccessSettings)),
             ("chevron.up", "Minimise Terminal", #selector(hideTerminal)),
             ("xmark", "Close Session…", #selector(closeSession))
         ] {
@@ -163,7 +173,11 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if action == #selector(closeSession) { closeButton = button; button.isEnabled = false }
             toolbar.addArrangedSubview(button)
         }
-        tabs.onSelect = { [weak self] in self?.selectSession(id: $0) }
+        tabs.onSelect = { [weak self] id in
+            guard let self else { return }
+            if id == self.settingsID { self.showAccessSettings() }
+            else { self.selectSession(id: id) }
+        }
         tabs.onClose = { [weak self] in self?.closeTab(id: $0) }
         tabs.onRename = { [weak self] in self?.renameSession(id: $0) }
         tabs.onMenuLock = { [weak self] in self?.overlay?.setInteractionLock("tab-menu", $0) }
@@ -218,9 +232,19 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func updateStatus() {
-        tabs.isHidden = store.sessions.isEmpty
-        tabHeight?.constant = store.sessions.isEmpty ? 0 : 38
-        tabs.update(store.sessions.map { .init(id: $0.id, title: $0.displayTitle, directory: $0.directory.path, running: $0.isRunning) }, selected: store.selectedID)
+        tabs.isHidden = false
+        tabHeight?.constant = 38
+        var items: [TerminalTabStrip.Item] = store.sessions.map {
+            .init(id: $0.id, title: $0.displayTitle, directory: $0.directory.path, running: $0.isRunning)
+        }
+        items.append(.init(id: settingsID, title: "Settings", directory: "", running: false, isSettings: true))
+        tabs.update(items, selected: settingsSelected ? settingsID : store.selectedID)
+        if settingsSelected {
+            statusLabel.stringValue = "Settings"
+            statusLabel.toolTip = nil
+            closeButton?.isEnabled = false
+            return
+        }
         guard let session = store.session else {
             statusLabel.stringValue = "Terminal"
             statusLabel.toolTip = nil
@@ -234,6 +258,9 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func attach(_ session: any TerminalSession) {
+        if settingsSelected { overlay?.setInteractionLock("settings-recording", false) }
+        settingsSelected = false
+        settingsView?.removeFromSuperview()
         if attachedSession !== session {
             attachedSession?.setFocused(false)
             attachedSession?.setPresented(false)
@@ -255,11 +282,11 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         session.onActivate = { [weak self] in self?.selectSession(id: id) }
         session.onInput = { [weak self] in
-            guard let self, self.store.selectedID == id else { return }
+            guard let self, !self.settingsSelected, self.store.selectedID == id else { return }
             self.overlay?.send(.terminalInput)
         }
         session.onInteractionLock = { [weak self] locked in
-            guard let self, self.store.selectedID == id else { return }
+            guard let self, !self.settingsSelected, self.store.selectedID == id else { return }
             self.overlay?.setInteractionLock("terminal", locked)
         }
         updateStatus()
@@ -284,7 +311,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         selectSession(id: store.sessions[sender.tag].id)
     }
     @objc func renameSelectedTab() {
-        if let id = store.selectedID { renameSession(id: id) }
+        if !settingsSelected, let id = store.selectedID { renameSession(id: id) }
     }
     func renameSession(id: UUID) {
         guard let session = store.sessions.first(where: { $0.id == id }) else { return }
@@ -331,7 +358,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let overlay { overlay.activate(); return }
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
-        if let session = store.session {
+        if !settingsSelected, let session = store.session {
             session.setPresented(true)
             window?.makeFirstResponder(session.view)
             session.setFocused(true)
@@ -344,7 +371,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window?.orderOut(nil)
     }
     @objc func closeSession() {
-        if let id = store.selectedID { closeTab(id: id) }
+        if !settingsSelected, let id = store.selectedID { closeTab(id: id) }
     }
     func closeTab(id: UUID) {
         guard let session = store.sessions.first(where: { $0.id == id }) else { return }
@@ -360,6 +387,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         session.view.removeFromSuperview()
         store.closeAfterConfirmation(id: id)
+        if settingsSelected { updateStatus(); return }
         if let selected = store.session { attach(selected) }
         else {
             attachedSession = nil
@@ -369,12 +397,36 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     @objc func showAccessSettings() {
         if shortcut == nil { shortcut = ShortcutController() }
-        overlay?.setInteractionLock("settings", true)
-        shortcut?.onSettingsClosed = { [weak self] in self?.overlay?.setInteractionLock("settings", false) }
-        shortcut?.showSettings(hoverEnabled: overlay?.state.hoverEnabled ?? true, setHover: { [weak self] value in
-            UserDefaults.standard.set(value, forKey: "access.hover.v1")
-            self?.overlay?.setHoverEnabled(value)
-        })
+        guard let shortcut else { return }
+        if settingsView == nil {
+            settingsView = shortcut.makeSettingsView(
+                hoverEnabled: overlay?.state.hoverEnabled ?? true,
+                setHover: { [weak self] value in
+                    UserDefaults.standard.set(value, forKey: "access.hover.v1")
+                    self?.overlay?.setHoverEnabled(value)
+                },
+                onRecordingChange: { [weak self] recording in
+                    self?.overlay?.setInteractionLock("settings-recording", recording)
+                })
+        }
+        guard let settingsView else { return }
+        if !settingsSelected {
+            attachedSession?.setFocused(false)
+            attachedSession?.setPresented(false)
+            attachedSession?.view.removeFromSuperview()
+            attachedSession = nil
+            window?.makeFirstResponder(nil)
+            overlay?.setInteractionLock("terminal", false)
+            emptyView?.removeFromSuperview()
+            emptyView = nil
+            settingsSelected = true
+            settingsView.frame = container.bounds
+            settingsView.autoresizingMask = [.width, .height]
+            container.addSubview(settingsView)
+            updateStatus()
+            overlay?.sessionChanged()
+        }
+        showTerminal()
     }
     @objc func quitApp() { NSApp.terminate(nil) }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -400,7 +452,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return .terminateNow
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool { hideTerminal(); return false }
-    func windowDidBecomeKey(_ notification: Notification) { store.session?.setFocused(true) }
+    func windowDidBecomeKey(_ notification: Notification) { if !settingsSelected { store.session?.setFocused(true) } }
     func windowDidResignKey(_ notification: Notification) { store.session?.setFocused(false) }
     func showError(_ error: Error) {
         let alert = NSAlert(error: error)

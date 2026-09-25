@@ -11,13 +11,11 @@ struct TerminalShortcut: Codable, Equatable {
 
 /// Public registered-hot-key API; no global keyboard monitor or permission prompt.
 @MainActor
-final class ShortcutController: NSObject, NSWindowDelegate {
+final class ShortcutController: NSObject {
     private var registration: EventHotKeyRef?
     private var handler: EventHandlerRef?
     private(set) var current: TerminalShortcut?
     var onToggle: (() -> Void)?
-    var onSettingsClosed: (() -> Void)?
-    var settingsWindow: NSWindow?
     private let defaults = UserDefaults.standard
 
     override init() {
@@ -63,20 +61,11 @@ final class ShortcutController: NSObject, NSWindowDelegate {
         defaults.removeObject(forKey: "access.shortcut.v1")
     }
 
-    func showSettings(hoverEnabled: Bool, setHover: @escaping (Bool) -> Void) {
-        if let settingsWindow { NSApp.activate(); settingsWindow.makeKeyAndOrderFront(nil); return }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 470, height: 320), styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Knotch Access"
-        window.delegate = self
-        window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: AccessSettings(controller: self, initialHover: hoverEnabled, setHover: setHover))
-        window.center()
-        settingsWindow = window
-        NSApp.activate()
-        window.makeKeyAndOrderFront(nil)
+    func makeSettingsView(hoverEnabled: Bool, setHover: @escaping (Bool) -> Void,
+                          onRecordingChange: @escaping (Bool) -> Void) -> NSView {
+        NSHostingView(rootView: AccessSettings(controller: self, initialHover: hoverEnabled,
+                                               setHover: setHover, onRecordingChange: onRecordingChange))
     }
-
-    func windowWillClose(_ notification: Notification) { onSettingsClosed?() }
 
     func shutdown() {
         if let registration { UnregisterEventHotKey(registration) }
@@ -89,40 +78,60 @@ final class ShortcutController: NSObject, NSWindowDelegate {
 private struct AccessSettings: View {
     let controller: ShortcutController
     let setHover: (Bool) -> Void
+    let onRecordingChange: (Bool) -> Void
     @State private var hover: Bool
     @State private var candidate: TerminalShortcut
-    @State private var message = "Record a shortcut, then choose Enable. Menu access is always available."
+    @State private var message = "Record a shortcut, then choose Enable."
 
-    init(controller: ShortcutController, initialHover: Bool, setHover: @escaping (Bool) -> Void) {
+    init(controller: ShortcutController, initialHover: Bool, setHover: @escaping (Bool) -> Void,
+         onRecordingChange: @escaping (Bool) -> Void) {
         self.controller = controller
         self.setHover = setHover
+        self.onRecordingChange = onRecordingChange
         _hover = State(initialValue: initialHover)
         _candidate = State(initialValue: controller.current ?? .suggested)
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Your terminal, at the notch").font(.title2.weight(.semibold))
-            Text("Hover to open. Click or use your shortcut to type. Move away to minimise; typing, selection and dialogs keep it open. Your tools keep running while minimised.")
-                .foregroundStyle(.secondary)
-            Toggle("Reveal on hover", isOn: $hover).onChange(of: hover) { _, value in setHover(value) }
+        VStack(alignment: .leading, spacing: 22) {
             HStack {
-                ShortcutRecorder(shortcut: $candidate).frame(width: 160, height: 32)
-                Button("Enable Shortcut") {
-                    message = controller.register(candidate) ?? "Enabled \(candidate.display). Press it to open or hide the terminal."
-                }.buttonStyle(.borderedProminent)
-                Button("Disable") { controller.disable(); message = "Shortcut disabled. Use the menu or hover." }
+                Image(systemName: "hand.point.up.left")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24)
+                Toggle("Reveal on hover", isOn: $hover)
+                    .onChange(of: hover) { _, value in setHover(value) }
             }
-            Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Divider()
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Keyboard shortcut").font(.headline)
+                HStack(spacing: 12) {
+                    ShortcutRecorder(shortcut: $candidate, onRecordingChange: onRecordingChange)
+                        .frame(width: 170, height: 34)
+                    Button("Enable") {
+                        message = controller.register(candidate) ?? "Enabled \(candidate.display)."
+                    }.buttonStyle(.borderedProminent)
+                    Button("Disable") {
+                        controller.disable()
+                        message = "Shortcut disabled."
+                    }
+                }
+                Text(message).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Spacer(minLength: 0)
-        }.padding(24).frame(width: 470, height: 320)
+        }
+        .padding(26)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .preferredColorScheme(.dark)
     }
 }
 
 private struct ShortcutRecorder: NSViewRepresentable {
     @Binding var shortcut: TerminalShortcut
+    let onRecordingChange: (Bool) -> Void
     func makeNSView(context: Context) -> RecorderView {
         let view = RecorderView()
         view.onRecord = { shortcut = $0 }
+        view.onRecordingChange = onRecordingChange
         view.text = shortcut.display
         return view
     }
@@ -132,6 +141,7 @@ private struct ShortcutRecorder: NSViewRepresentable {
 @MainActor
 private final class RecorderView: NSView {
     var onRecord: ((TerminalShortcut) -> Void)?
+    var onRecordingChange: ((Bool) -> Void)?
     var text = "" { didSet { needsDisplay = true } }
     private var recording = false
     override var acceptsFirstResponder: Bool { true }
@@ -144,14 +154,28 @@ private final class RecorderView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
     override func mouseDown(with event: NSEvent) { beginRecording() }
     override func accessibilityPerformPress() -> Bool { beginRecording(); return true }
-    private func beginRecording() { recording = true; window?.makeFirstResponder(self); needsDisplay = true }
+    private func beginRecording() {
+        recording = true
+        onRecordingChange?(true)
+        window?.makeFirstResponder(self)
+        needsDisplay = true
+    }
+    private func endRecording() {
+        recording = false
+        onRecordingChange?(false)
+        needsDisplay = true
+    }
+    override func resignFirstResponder() -> Bool {
+        if recording { endRecording() }
+        return super.resignFirstResponder()
+    }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard recording else { return false }
         keyDown(with: event)
         return true
     }
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 { recording = false; needsDisplay = true; return }
+        if event.keyCode == 53 { endRecording(); return }
         if !recording { beginRecording(); return }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard !flags.intersection([.command, .control, .option]).isEmpty else { return }
@@ -163,8 +187,7 @@ private final class RecorderView: NSView {
         if flags.contains(.command) { modifiers |= UInt32(cmdKey); display += "⌘" }
         display += event.charactersIgnoringModifiers?.uppercased() ?? "Key \(event.keyCode)"
         onRecord?(TerminalShortcut(keyCode: UInt32(event.keyCode), modifiers: modifiers, display: display))
-        recording = false
-        needsDisplay = true
+        endRecording()
     }
     override func draw(_ dirtyRect: NSRect) {
         (recording ? NSColor.controlAccentColor.withAlphaComponent(0.2) : NSColor.controlBackgroundColor).setFill()

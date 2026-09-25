@@ -38,7 +38,8 @@ private final class OverlayNativePanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
-        // The notch silhouette and its expanded panel are anchored to the screen edge.
+        // Both the camera silhouette and the plain-display menu-bar handle
+        // are anchored to the screen edge, outside AppKit's visible frame.
         anchorsToScreenEdge ? frameRect : super.constrainFrameRect(frameRect, to: screen)
     }
 
@@ -487,13 +488,13 @@ final class OverlayController: NSObject, NSWindowDelegate {
            old.triggerFrame == layout.triggerFrame, old.backingScale == layout.backingScale { return }
         self.layout = layout
         let notched = layout.notchFrame != nil
-        (panel as? OverlayNativePanel)?.anchorsToScreenEdge = notched
-        panel.level = notched ? .statusBar : .floating
+        (panel as? OverlayNativePanel)?.anchorsToScreenEdge = true
+        panel.level = .statusBar
         panelRoot.layer?.maskedCorners = notched
             ? [.layerMinXMinYCorner, .layerMaxXMinYCorner]
             : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
-        triggerPanel.anchorsToScreenEdge = notched
-        triggerPanel.level = layout.notchFrame != nil ? .statusBar : .floating
+        triggerPanel.anchorsToScreenEdge = true
+        triggerPanel.level = .statusBar
         triggerPanel.setFrame(layout.triggerFrame, display: true)
         motion.cancel(at: state.presentation == .collapsed ? 0 : 1)
         renderMotionFrame(motion.value, reducedMotion: reduceMotion)

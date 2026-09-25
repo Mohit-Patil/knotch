@@ -239,6 +239,64 @@ enum HarnessQualification {
         try check("Close last tab", coordinator.store.sessions.isEmpty && coordinator.store.selectedID == nil && coordinator.store.session == nil && first.surface == nil, "Last fixture close left an empty store and safe empty presentation")
     }
 
+    static func runSettings(coordinator: AppCoordinator) async {
+        records = []
+        let output = ProcessInfo.processInfo.environment["KNOTCH_EVIDENCE"] ?? "/tmp/knotch-settings-results.json"
+        do {
+            guard let runtime = coordinator.runtime, let overlay = coordinator.overlay else {
+                throw TerminalFailure.unavailable("No overlay runtime")
+            }
+            overlay.fixtureControlsTracking = true
+            if let layout = overlay.layout, let display = overlay.panel.screen {
+                let attached = abs(overlay.triggerFrame.maxY - display.frame.maxY) < 0.5
+                    && abs(overlay.panel.frame.maxY - display.frame.maxY) < 0.5
+                    && overlay.triggerFrame.intersects(overlay.panel.frame)
+                    && overlay.panel.level == .statusBar
+                let plainBand = layout.notchFrame != nil
+                    || overlay.triggerFrame.minY >= display.visibleFrame.maxY - 0.5
+                try check("Display-edge placement", attached && plainBand,
+                          "Current display \(display.frame), visible \(display.visibleFrame), trigger \(overlay.triggerFrame), panel \(overlay.panel.frame); plain-display handle stays in the measured menu-bar band")
+            }
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent("knotch-settings-fixture", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let session = try GhosttySession(runtime: runtime, directory: folder, testCommand: "/bin/zsh -f")
+            coordinator.store.adoptFixture(session)
+            coordinator.attach(session)
+            overlay.activate()
+            try await waitFor({ !screen(session).isEmpty }, description: "settings fixture shell")
+            try await waitFor({ !overlay.isAnimating }, description: "expanded panel placement")
+            if let layout = overlay.layout, let display = overlay.panel.screen {
+                try check("Expanded display fit",
+                          abs(overlay.panel.frame.maxY - display.frame.maxY) < 0.5
+                            && layout.usableFrame.contains(overlay.panel.frame)
+                            && abs(overlay.panel.frame.width - layout.panelFrame.width) < 0.5,
+                          "Expanded native panel \(overlay.panel.frame) fits current screen placement \(layout.usableFrame) at its top edge")
+            }
+            let surface = session.surface!
+            let pid = ghostty_surface_foreground_pid(surface)
+            let beforeWindows = Set(NSApp.windows.map(\.windowNumber))
+            send("sleep 1; printf 'SETTINGS_BACKGROUND_DONE\\n'\r", to: session)
+            coordinator.showAccessSettings()
+            try check("Settings tab owns content", coordinator.statusLabel.stringValue == "Settings" && coordinator.store.session?.id == session.id && session.view.superview == nil && session.surface == surface && Set(NSApp.windows.map(\.windowNumber)) == beforeWindows, "Settings replaced the terminal in the same native panel without creating another window or freeing the shell")
+            try await waitFor({ screen(session).contains("\nSETTINGS_BACKGROUND_DONE") }, description: "output while Settings is selected")
+            coordinator.selectSession(id: session.id)
+            try check("Settings return keeps shell", coordinator.statusLabel.stringValue != "Settings" && session.view.superview === coordinator.container && session.surface == surface && ghostty_surface_foreground_pid(surface) == pid && screen(session).contains("\nSETTINGS_BACKGROUND_DONE"), "Returning from Settings presented the same surface, shell PID, and background output")
+            coordinator.overlay?.hide(restoreFocus: false)
+            session.view.removeFromSuperview()
+            coordinator.store.closeAfterConfirmation(id: session.id)
+            try await waitFor({ kill(pid_t(pid), 0) != 0 }, description: "fixture shell close")
+        } catch {
+            records.append(["test": "Settings completion", "result": "FAILED", "detail": error.localizedDescription])
+        }
+        let data = try? JSONSerialization.data(withJSONObject: ["engine": "982fe90d941e4b4aab4905ffcbcfdea60bd83343", "results": records] as [String: Any], options: [.prettyPrinted, .sortedKeys])
+        if let data { try? data.write(to: URL(fileURLWithPath: output), options: .atomic) }
+        coordinator.store.closeAllAfterConfirmation()
+        coordinator.quitting = true
+        coordinator.shortcut?.shutdown()
+        coordinator.runtime?.shutdown()
+        exit(records.contains { $0["result"] == "FAILED" } ? 1 : 0)
+    }
+
     static func runOverlay(coordinator: AppCoordinator) async {
         records = []
         let output = ProcessInfo.processInfo.environment["KNOTCH_EVIDENCE"] ?? "/tmp/knotch-overlay-results.json"
@@ -295,9 +353,9 @@ enum HarnessQualification {
             sink.title = "Knotch focus qualification"
             let editor = NSTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 260))
             sink.contentView = editor
-            NSApp.activate()
-            try await waitFor({ NSApp.isActive }, description: "foreground activation of focus fixture (launch this test with open -n)")
             sink.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            try await waitFor({ NSApp.isActive && sink.isKeyWindow }, description: "foreground activation of visible focus fixture")
             sink.makeFirstResponder(editor)
             try await waitFor({ sink.isKeyWindow }, description: "native editor key window")
             overlay.send(.pointerEnteredTrigger)
@@ -374,6 +432,12 @@ enum HarnessQualification {
                 try check("Expanded screen-edge alignment", overlay.panel.frame.maxY == overlay.panel.screen!.frame.maxY && overlay.panel.frame.contains(notch) && overlay.panel.level == .statusBar, "Expanded native panel reaches the screen top and contains the measured camera cutout; header uses its side wings")
             }
             try check("Display placement", (overlay.layout?.usableFrame.contains(overlay.panel.frame) ?? false), "Actual panel frame \(overlay.panel.frame) is inside selected display placement bounds (including the notch header band)")
+            send("sleep 1; printf 'SETTINGS_BACKGROUND_DONE\\n'\r", to: session)
+            coordinator.showAccessSettings()
+            try check("Settings in notch", coordinator.statusLabel.stringValue == "Settings" && coordinator.store.session?.id == session.id && session.view.superview == nil && session.surface == surface, "Settings replaced the terminal inside the existing panel while its session and shell remained owned")
+            try await waitFor { screen(session).contains("\nSETTINGS_BACKGROUND_DONE") }
+            coordinator.selectSession(id: session.id)
+            try check("Settings return retains terminal", coordinator.statusLabel.stringValue != "Settings" && session.view.superview === coordinator.container && session.surface == surface && ghostty_surface_foreground_pid(surface!) == pid, "Returning from Settings showed the same surface, shell PID, and background output")
             try await qualifyTabs(coordinator: coordinator, runtime: runtime, first: session, directory: folder)
             sink.orderOut(nil)
             session.view.removeFromSuperview()

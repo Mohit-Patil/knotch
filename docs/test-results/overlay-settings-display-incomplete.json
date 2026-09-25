@@ -1,0 +1,40 @@
+{
+  "engine" : "982fe90d941e4b4aab4905ffcbcfdea60bd83343",
+  "results" : [
+    {
+      "detail" : "Launch exposes only the notch trigger, without activating the terminal",
+      "result" : "PASSED",
+      "test" : "Collapsed launch"
+    },
+    {
+      "detail" : "Real PTY child has no inherited NO_COLOR and advertises truecolor with xterm-ghostty",
+      "result" : "PASSED",
+      "test" : "Color-capable child environment"
+    },
+    {
+      "detail" : "Actual native panel expands through intermediate geometry while Ghostty rows, columns and view size remain fixed",
+      "result" : "PASSED",
+      "test" : "Spring clip keeps terminal grid"
+    },
+    {
+      "detail" : "Close interrupted by reopen settles visible with same terminal surface",
+      "result" : "PASSED",
+      "test" : "Interrupted spring reopen"
+    },
+    {
+      "detail" : "Supplied lock event hides immediately without an animated privacy delay",
+      "result" : "PASSED",
+      "test" : "Lock bypasses motion"
+    },
+    {
+      "detail" : "Fixture Reduce Motion override uses full resting geometry (allowing native half-point origin rounding) and a short opacity fade",
+      "result" : "PASSED",
+      "test" : "Reduce Motion fixed geometry"
+    },
+    {
+      "detail" : "Timed out waiting for foreground activation of visible focus fixture",
+      "result" : "FAILED",
+      "test" : "Overlay completion"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # Knotch
 
-Knotch is a local macOS alpha that keeps independent Ghostty terminal sessions near the top of the screen. The collapsed black shape joins the MacBook camera cutout at the screen edge. The expanded panel starts at the same screen edge, placing its title and controls beside the camera and terminal content directly below it. There is no separate handle line. On other displays, the trigger sits near the top center. Hiding the panel or switching tabs keeps the shells running. Closing a tab ends only that session; quitting ends them all.
+Knotch is a local macOS alpha that keeps independent Ghostty terminal sessions near the top of the screen. The collapsed black shape joins the MacBook camera cutout at the screen edge. The expanded panel starts at the same screen edge, placing its title and controls beside the camera and terminal content directly below it. There is no separate handle line. On displays without a cutout, the compact handle occupies the measured menu-bar band at the top center and the panel expands from that edge. Hiding the panel or switching tabs keeps the shells running. Closing a tab ends only that session; quitting ends them all.
 
 The app is built for Apple Silicon macOS 26 or later. The qualified local toolchain is Xcode 27.0 with macOS SDK 27.0, Swift 6.4, Zig 0.16.0, and XcodeGen 2.46.0. The full Ghostty core is pinned to commit `982fe90d941e4b4aab4905ffcbcfdea60bd83343`; its internal embedder API is revision-bound.
 
@@ -14,7 +14,7 @@ scripts/build.sh
 open .build/app/Build/Products/Release/Knotch.app
 ```
 
-The first command fetches and builds the pinned engine. `scripts/build.sh` generates the Xcode project, builds a Release app, bundles its own Ghostty shell integration and terminfo, and signs it locally. No separate Ghostty.app is needed. The app appears in the menu bar as `>_`; choose **Open Project…** or **Open Home Shell** to start a login shell in a new tab. You can type an installed `codex`, `claude`, or another terminal command yourself. **Access & Shortcut…** lets you record a shortcut or turn hover reveal off. There is no global shortcut enabled by default.
+The first command fetches and builds the pinned engine. `scripts/build.sh` generates the Xcode project, builds a Release app, bundles its own Ghostty shell integration and terminfo, and signs it locally. No separate Ghostty.app is needed. The app appears in the menu bar as `>_`; choose **Open Project…** or **Open Home Shell** to start a login shell in a new tab. You can type an installed `codex`, `claude`, or another terminal command yourself. The **Settings** tab inside the expanded panel lets you record a shortcut or turn hover reveal off. There is no global shortcut enabled by default.
 
 The overlay controller passed a native test in which hover preview left another editor key; cross-app physical hover is still untested. Click the panel to type. Moving away minimises after 350 ms, postponed until 1.5 seconds after the last input. Selection, composition and dialogs hold it open. Shortcut-only opening stays open until the pointer enters and leaves. **Minimise Terminal** retains the session; a manually operated accessory-mode session kept the same shell PID after minimise and reopen. **Close Session…** asks before ending a running shell, and quitting warns that sessions do not survive app exit. A shortcut can be recorded, but global delivery has not been qualified; the menu-bar handle remains available. Normal `open` launch and direct execution of `Knotch.app/Contents/MacOS/Knotch` both work.
 
@@ -29,7 +29,9 @@ scripts/test-native.sh all
 
 In the harness, use **Open Project…** or **Home Shell**. A direct fixture directory can also be passed after `--directory` using an absolute path. The test build enables bounded fixture hooks; the normal app does not. The native suite takes about 75 seconds and runs disposable local shells. Results and every unrun acceptance item are recorded in the [qualification report](docs/test-results/acceptance-matrix.md), with a separate [clean-checkout report](docs/test-results/reproducibility.md).
 
-This alpha has one session. Tabs, command presets, automatic agent launch, and session restoration are not implemented. The manual Codex and Claude Code checks reached their trust prompts and exercised navigation and exit; no approval, authentication flow, model request, or paid action was tested. Nothing has been pushed or prepared for distribution.
+Run `scripts/test-native.sh settings` for the focused Settings/session and display-edge fixture. It uses the connected display's AppKit geometry. Model tests cover notched, plain, hidden-menu, tiny, and 3840×2160 layouts. Full physical multi-monitor switching and hover behavior still need owner-side qualification.
+
+This alpha supports multiple live sessions and an in-panel Settings tab. Command presets, automatic agent launch, and session restoration are not implemented. The manual Codex and Claude Code checks reached their trust prompts and exercised navigation and exit; no approval, authentication flow, model request, or paid action was tested. Nothing has been pushed or prepared for distribution.
 
 The September 25 follow-up corrects the detached position and launch behavior shown in the owner screenshot. See the [notch and minimise correction](docs/decisions/0002-notch-attachment-and-minimise.md) for exact behavior and test boundaries.
 
@@ -43,7 +45,7 @@ Knotch clears an inherited `NO_COLOR` flag before engine initialization: launchi
 
 ### Terminal tabs
 
-The tab strip sits across the top of the expanded notch, below the camera-safe header. Click **+** or press **Command-T** for a new shell in the selected tab's original project directory; the folder-plus control opens a project in another tab. Click a tab or use **Command-1…9** to select it. Additional tabs scroll horizontally.
+The tab strip sits across the top of the expanded notch, below the camera-safe header. Click **+** or press **Command-T** for a new shell in the selected tab's original project directory; the folder-plus control opens a project in another tab. Click a terminal tab or use **Command-1…9** to select it. The **Settings** tab stays at the end of the strip; switching to it leaves every shell running. Additional tabs scroll horizontally.
 
 Ghostty's terminal title events name each tab, with its directory as the initial fallback. Double-click or right-click a tab to rename it; clearing the name restores automatic titles. Each tab keeps its own live process, output and scroll position when you switch or minimise. The icon and accessible label distinguish a running shell from an ended session. These are session observations, not claims that an AI task is finished; the terminal's retained output remains the work record.
 

@@ -21,22 +21,26 @@ struct DisplayGeometry {
             return notchedLayout(notch: notch, usable: usable)
         }
 
-        // On a display without a camera cutout, keep the compact pill entirely
-        // below the menu bar and place the expanded body directly beneath it.
-        let topBelowSafeArea = screenFrame.maxY - max(0, safeAreaTop)
-        let top = clamp(topBelowSafeArea, min: usable.minY + 1, max: usable.maxY)
+        // A plain display has no hardware island. Keep its handle in the
+        // measured menu-bar band instead of floating over application content.
+        // The expanded window reaches the same screen edge, while its body
+        // still obeys the visible frame's dock and horizontal insets.
+        let menuBarHeight = max(0, screenFrame.maxY - usable.maxY)
+        let handleHeight = menuBarHeight > 0 ? min(triggerSize.height, menuBarHeight) : triggerSize.height
         let triggerWidth = min(max(1, triggerSize.width), max(1, usable.width))
-        let triggerHeight = min(max(1, triggerSize.height), max(1, top - usable.minY))
+        let triggerHeight = min(max(1, handleHeight), max(1, screenFrame.height))
         let centerX = screenFrame.midX
         let triggerX = clamp(centerX - triggerWidth / 2,
                              min: usable.minX, max: usable.maxX - triggerWidth)
-        let trigger = CGRect(x: triggerX, y: top - triggerHeight,
+        let trigger = CGRect(x: triggerX, y: screenFrame.maxY - triggerHeight,
                              width: triggerWidth, height: triggerHeight)
 
+        let panelUsable = CGRect(x: usable.minX, y: usable.minY,
+                                 width: usable.width, height: screenFrame.maxY - usable.minY)
         let panel = panelFrame(centerX: centerX,
-                               top: trigger.minY - max(0, panelGap), usable: usable)
+                               top: screenFrame.maxY - max(0, panelGap), usable: panelUsable)
         return OverlayLayout(triggerFrame: trigger, panelFrame: panel,
-                             usableFrame: usable, notchFrame: nil,
+                             usableFrame: panelUsable, notchFrame: nil,
                              backingScale: max(1, backingScale))
     }
 
@@ -62,8 +66,12 @@ struct DisplayGeometry {
 
     private func panelFrame(centerX: CGFloat, top: CGFloat, usable: CGRect) -> CGRect {
         let availablePanelHeight = max(0, top - usable.minY)
-        let panelWidth = min(max(1, preferredPanelSize.width), max(1, usable.width))
-        let panelHeight = min(max(1, preferredPanelSize.height),
+        // Keep the familiar size on laptop displays; offer more terminal cells
+        // on large external monitors without filling the whole desktop.
+        let desiredWidth = min(1280, max(preferredPanelSize.width, usable.width * 0.45))
+        let desiredHeight = min(720, max(preferredPanelSize.height, availablePanelHeight * 0.36))
+        let panelWidth = min(max(1, desiredWidth), max(1, usable.width))
+        let panelHeight = min(max(1, desiredHeight),
                               max(1, availablePanelHeight), max(1, usable.height))
         let panelX = clamp(centerX - panelWidth / 2,
                            min: usable.minX, max: usable.maxX - panelWidth)

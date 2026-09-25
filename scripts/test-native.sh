@@ -2,13 +2,13 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODE="${1:-all}"
-[[ "$MODE" == all || "$MODE" == harness || "$MODE" == overlay ]] || { printf 'usage: %s [all|harness|overlay]\n' "$0" >&2; exit 1; }
+[[ "$MODE" == all || "$MODE" == harness || "$MODE" == overlay || "$MODE" == settings ]] || { printf 'usage: %s [all|harness|overlay|settings]\n' "$0" >&2; exit 1; }
 APP="$ROOT/.build/test-app/Build/Products/Release/Knotch.app/Contents/MacOS/Knotch"
 [[ -x "$APP" ]] || { printf 'First run scripts/build.sh --test\n' >&2; exit 1; }
 mkdir -p "$ROOT/.evidence"
 run_fixture() {
   local name="$1" flag="$2"
-  printf 'Running native %s qualification; the harness includes a 60-second hidden fixture.\n' "$name"
+  printf 'Running native %s qualification.\n' "$name"
   KNOTCH_EVIDENCE="$ROOT/.evidence/$name-results.json" "$APP" "$flag" > "$ROOT/.evidence/$name-run.log" 2>&1
   python3 - "$ROOT/.evidence/$name-results.json" <<'PY'
 import json, sys
@@ -21,3 +21,5 @@ PY
 }
 if [[ "$MODE" == all || "$MODE" == harness ]]; then run_fixture harness --self-test; fi
 if [[ "$MODE" == all || "$MODE" == overlay ]]; then run_fixture overlay --overlay-self-test; fi
+
+if [[ "$MODE" == all || "$MODE" == settings ]]; then run_fixture settings --settings-self-test; fi

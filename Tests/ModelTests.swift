@@ -269,16 +269,30 @@ struct ModelTests {
         geometry.backingScale = 1
         let plain = geometry.layout()
         expect(plain.notchFrame == nil, "plain display has no inferred cutout")
-        expect(visible.contains(plain.triggerFrame) && visible.contains(plain.panelFrame),
-               "plain-display pill and body stay inside visible frame")
+        expect(near(plain.triggerFrame.maxY, screen.maxY)
+               && plain.triggerFrame.minY >= visible.maxY
+               && near(plain.panelFrame.maxY, screen.maxY)
+               && screen.contains(plain.panelFrame),
+               "plain-display handle occupies menu-bar band and body joins screen edge")
         expect(near(plain.triggerFrame.midX, screen.midX), "plain display uses top center")
         expect(plain.backingPixels(for: CGSize(width: 100, height: 50)) == CGSize(width: 100, height: 50),
                "1x backing conversion")
 
+        geometry.screenFrame = CGRect(x: 0, y: 0, width: 3840, height: 2160)
+        geometry.visibleFrame = CGRect(x: 63, y: 0, width: 3777, height: 2130)
+        let external = geometry.layout()
+        expect(external.triggerFrame == CGRect(x: 1840, y: 2132, width: 160, height: 28)
+               && external.panelFrame == CGRect(x: 1280, y: 1440, width: 1280, height: 720),
+               "3840x2160 external display uses menu-bar handle and larger fitted terminal")
+
+        geometry.screenFrame = screen
+        geometry.visibleFrame = visible
+
         geometry.visibleFrame = CGRect(x: -1920, y: -80, width: 1920, height: 1080)
         let autoHiddenMenu = geometry.layout()
-        expect(autoHiddenMenu.triggerFrame.maxY > plain.triggerFrame.maxY,
-               "auto-hidden menu bar makes top space available")
+        expect(near(autoHiddenMenu.triggerFrame.maxY, screen.maxY)
+               && near(autoHiddenMenu.panelFrame.maxY, screen.maxY),
+               "auto-hidden menu keeps the plain-display handle at screen edge")
 
         geometry.auxiliaryTopLeft = CGRect(x: -1920, y: 900, width: 810, height: 34)
         geometry.auxiliaryTopRight = CGRect(x: -810, y: 966, width: 810, height: 34)

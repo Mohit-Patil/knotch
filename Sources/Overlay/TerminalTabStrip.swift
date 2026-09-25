@@ -8,6 +8,7 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
         let title: String
         let directory: String
         let running: Bool
+        var isSettings = false
     }
     private final class TabButton: NSButton {
         var sessionID: UUID?
@@ -59,35 +60,39 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
             button.setButtonType(.toggle)
             button.state = active ? .on : .off
             button.cell?.lineBreakMode = .byTruncatingTail
-            button.image = NSImage(systemSymbolName: item.running ? "terminal" : "stop.circle", accessibilityDescription: nil)
+            button.image = NSImage(systemSymbolName: item.isSettings ? "gearshape" : (item.running ? "terminal" : "stop.circle"), accessibilityDescription: nil)
             button.imagePosition = .imageLeading
             button.contentTintColor = active ? .white : .secondaryLabelColor
-            let status = item.running ? "Shell running" : "Session ended"
-            button.toolTip = "\(item.title)\n\(item.directory)\n\(status) · Double-click to rename"
+            let status = item.isSettings ? "Preferences" : (item.running ? "Shell running" : "Session ended")
+            button.toolTip = item.isSettings ? "Settings inside Knotch" : "\(item.title)\n\(item.directory)\n\(status) · Double-click to rename"
             button.setAccessibilityLabel("\(item.title), \(status)\(active ? ", selected" : "")")
             button.target = self
             button.action = #selector(selectTab(_:))
-            button.onRename = { [weak self] in self?.onRename?(item.id) }
-            let menu = NSMenu()
-            menu.delegate = self
-            for (title, action) in [("Rename Tab…", #selector(renameTab(_:))), ("Close Tab…", #selector(closeTab(_:)))] {
-                let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
-                entry.representedObject = item.id
-                entry.target = self
-                menu.addItem(entry)
+            if !item.isSettings { button.onRename = { [weak self] in self?.onRename?(item.id) } }
+            if !item.isSettings {
+                let menu = NSMenu()
+                menu.delegate = self
+                for (title, action) in [("Rename Tab…", #selector(renameTab(_:))), ("Close Tab…", #selector(closeTab(_:)))] {
+                    let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
+                    entry.representedObject = item.id
+                    entry.target = self
+                    menu.addItem(entry)
+                }
+                button.menu = menu
             }
-            button.menu = menu
             cell.addSubview(button)
-            let close = TabButton(frame: NSRect(x: 174, y: 2, width: 24, height: 24))
-            close.sessionID = item.id
-            close.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close tab")
-            close.isBordered = false
-            close.contentTintColor = .secondaryLabelColor
-            close.toolTip = "Close \(item.title)"
-            close.setAccessibilityLabel("Close \(item.title)")
-            close.target = self
-            close.action = #selector(closeTab(_:))
-            cell.addSubview(close)
+            if !item.isSettings {
+                let close = TabButton(frame: NSRect(x: 174, y: 2, width: 24, height: 24))
+                close.sessionID = item.id
+                close.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close tab")
+                close.isBordered = false
+                close.contentTintColor = .secondaryLabelColor
+                close.toolTip = "Close \(item.title)"
+                close.setAccessibilityLabel("Close \(item.title)")
+                close.target = self
+                close.action = #selector(closeTab(_:))
+                cell.addSubview(close)
+            }
             document.addSubview(cell)
             if active { selectedView = cell }
             x += 206

@@ -23,9 +23,11 @@ RESOURCE_SOURCE="$ENGINE/zig-out/share"
 if [[ "$MODE" == --test ]]; then
   DERIVED="$ROOT/.build/test-app"
   CONDITIONS="HARNESS_TESTS"
+  BUNDLE_ID="dev.personal.Knotch.qualification"
 else
   DERIVED="$ROOT/.build/app"
   CONDITIONS=""
+  BUNDLE_ID="dev.personal.Knotch"
 fi
 
 (
@@ -33,7 +35,7 @@ fi
   xcodegen generate --spec project.yml
   xcodebuild -project Knotch.xcodeproj -scheme Knotch -configuration Release \
     -destination 'platform=macOS,arch=arm64' -derivedDataPath "$DERIVED" \
-    CODE_SIGNING_ALLOWED=NO SWIFT_ACTIVE_COMPILATION_CONDITIONS="$CONDITIONS" build
+    CODE_SIGNING_ALLOWED=NO PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" SWIFT_ACTIVE_COMPILATION_CONDITIONS="$CONDITIONS" build
 )
 
 APP="$DERIVED/Build/Products/Release/Knotch.app"
