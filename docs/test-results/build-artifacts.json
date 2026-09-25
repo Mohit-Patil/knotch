@@ -1,0 +1,16 @@
+{
+  "appSourceRevision": "fc1081e95f61ab4f74392e29df5f0055f32188f0",
+  "date": "2026-09-25",
+  "configuration": "Release; Swift 6 language mode; Swift 6.4 compiler",
+  "engineRevision": "982fe90d941e4b4aab4905ffcbcfdea60bd83343",
+  "executables": {
+    "app": {
+      "sha256": "e06db67cc7c4d2bfd3d001a6ee6a658536a23086177076eb27456d4ffca738f9",
+      "testHooks": false
+    },
+    "test-app": {
+      "sha256": "8c66ab3c2fe69c85ce3528929fd0cd3e3f21099c50b8ed5e1ddf87130a5294fe",
+      "testHooks": true
+    }
+  }
+}

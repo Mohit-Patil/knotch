@@ -1,0 +1,68 @@
+{
+  "engine": "982fe90d941e4b4aab4905ffcbcfdea60bd83343",
+  "results": [
+    {
+      "detail": "Below-dwell tracking events: panel visible=false, sink key=true, state=collapsed",
+      "result": "PASSED",
+      "test": "UX-01 native controller"
+    },
+    {
+      "detail": "Dwell revealed actual NSPanel without changing the existing native key window; tracking events supplied by test",
+      "result": "PASSED",
+      "test": "UX-02 native controller"
+    },
+    {
+      "detail": "Native editor kept its responder; terminal input/state unchanged",
+      "result": "PASSED",
+      "test": "UX-02 responder ownership"
+    },
+    {
+      "detail": "Reentry cancelled exit grace; trigger/panel use adjacent geometry",
+      "result": "PASSED",
+      "test": "UX-06/UX-07 controller"
+    },
+    {
+      "detail": "Deliberate controller activation made actual panel and terminal key",
+      "result": "PASSED",
+      "test": "UX-03 activation"
+    },
+    {
+      "detail": "Pointer exit does not collapse an interactive terminal",
+      "result": "PASSED",
+      "test": "UX-05"
+    },
+    {
+      "detail": "Escape reached the real raw-input program as byte 27; panel stayed interactive",
+      "result": "PASSED",
+      "test": "UX-08"
+    },
+    {
+      "detail": "A presentation lock kept the actual panel visible through focus loss",
+      "result": "PASSED",
+      "test": "UX-09 native lock"
+    },
+    {
+      "detail": "200 actual panel reveal/hide calls kept the same surface and PID 89207; not a latency/soak measurement",
+      "result": "PASSED",
+      "test": "Alpha retained session"
+    },
+    {
+      "detail": "Disabled hover ignored dwell; explicit activation remains available",
+      "result": "PASSED",
+      "test": "UX-14 controller"
+    },
+    {
+      "detail": "Actual panel frame (375.0, 525.0, 960.0, 520.0) is inside selected display usable geometry",
+      "result": "PASSED",
+      "test": "Display placement"
+    },
+    {
+      "detail": "Explicitly freed only the fixture surface; its tracked shell PID ended",
+      "result": "PASSED",
+      "test": "Confirmed close lifecycle"
+    }
+  ],
+  "appSourceRevision": "fc1081e95f61ab4f74392e29df5f0055f32188f0",
+  "build": "Release; HARNESS_TESTS; Swift 6; Xcode 27.0 / SDK 27.0; Zig 0.16.0",
+  "environment": "macOS 26.6.2 (25G83); MacBook Air M5 arm64 16 GB; built-in 2560x1664 Retina"
+}
