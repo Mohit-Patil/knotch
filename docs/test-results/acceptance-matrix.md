@@ -178,3 +178,7 @@ The 10-check Settings fixture and model tests passed. Release/test builds and si
 ## Inline Clipboard image preview follow-up
 
 Image cards now show a large aspect-fit preview directly in the Clipboard tab; actions remain visible above it and the preview retains the private drag source. The 34-check clipboard fixture, 10-check Settings fixture, model tests, and both builds passed. The installed signed executable matched Release and was restarted. Native UI inspection of the owner-shown image confirmed the larger preview; physical dragging from that preview was NOT_RUN.
+
+## Compact Clipboard image carousel follow-up
+
+The full-width image card has been replaced with a horizontally scrollable shelf of compact image tiles; other Clipboard entries remain below it. Arrow navigation uses a spring animation, and the image preview remains the drag source. The test and Release builds passed, alongside the 34-check Clipboard fixture, 10-check Settings fixture, and model tests. The installed signed executable matched Release and was restarted. Native UI inspection confirmed one saved image appears in a compact tile; physical multi-image scrolling and dragging were NOT_RUN.

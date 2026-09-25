@@ -97,3 +97,7 @@ Model tests and the 10-check Settings fixture passed. Release and test builds su
 ## Inline Clipboard image preview
 
 The owner screenshot showed a small image thumbnail with most of the Clipboard panel unused. Image entries now render a large aspect-fit preview directly in their card, with Copy, Pin, and Remove above it. The preview remains the drag source. The repeated drag hint was removed. The test and Release builds passed, as did the 34-check clipboard fixture, 10-check Settings fixture, and model tests. The installed app was restarted and its signature and executable hash verified; native UI inspection showed the image enlarged in the panel. A physical drag starting from the enlarged preview remains unqualified.
+
+## Compact Clipboard image carousel
+
+The owner requested a sliding carousel instead of one image occupying the Clipboard panel. Image entries now appear as 226-point tiles in a horizontal, trackpad-scrollable strip with spring-animated previous/next controls. Text, links, rich text, and files stay in the list below. Each image still exposes Copy, Pin, Remove, and the private drag source. The test and Release builds passed, as did the 34-check Clipboard fixture, 10-check Settings fixture, and model tests. The installed signed executable matched Release and was restarted; native UI inspection confirmed the compact tile with the existing saved screenshot. Multi-image swiping and a physical drag remain untested.

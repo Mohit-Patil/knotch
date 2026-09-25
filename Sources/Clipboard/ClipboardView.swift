@@ -6,6 +6,7 @@ struct ClipboardView: View {
     let onDragChange: (Bool) -> Void
     @State private var query = ""
     @State private var confirmClearAll = false
+    @State private var focusedImageID: UUID?
 
     private var visible: [ClipboardEntry] {
         let ordered = history.entries.sorted {
@@ -14,6 +15,14 @@ struct ClipboardView: View {
         }
         guard !query.isEmpty else { return ordered }
         return ordered.filter { $0.label.localizedCaseInsensitiveContains(query) }
+    }
+
+    private var imageEntries: [ClipboardEntry] {
+        visible.filter { $0.kind == .image && $0.data.flatMap(NSImage.init(data:)) != nil }
+    }
+
+    private var otherEntries: [ClipboardEntry] {
+        visible.filter { entry in !imageEntries.contains(where: { $0.id == entry.id }) }
     }
 
     var body: some View {
@@ -57,9 +66,14 @@ struct ClipboardView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(visible) { entry in
-                            row(entry)
+                    VStack(alignment: .leading, spacing: 14) {
+                        if !imageEntries.isEmpty {
+                            imageCarousel
+                        }
+                        LazyVStack(spacing: 8) {
+                            ForEach(otherEntries) { entry in
+                                compactRow(entry)
+                            }
                         }
                     }
                     .padding(.vertical, 2)
@@ -77,38 +91,84 @@ struct ClipboardView: View {
         }
     }
 
-    @ViewBuilder
-    private func row(_ entry: ClipboardEntry) -> some View {
-        if entry.kind == .image, let data = entry.data, let image = NSImage(data: data) {
-            imageRow(entry, image: image)
-        } else {
-            compactRow(entry)
-        }
-    }
-
-    private func imageRow(_ entry: ClipboardEntry, image: NSImage) -> some View {
+    private var imageCarousel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Label("Image", systemImage: "photo")
-                    .font(.system(size: 13, weight: .medium))
-                Text(entry.createdAt.formatted(date: .omitted, time: .shortened))
+            HStack {
+                Text("Images")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("\(imageEntries.count)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                actions(for: entry)
+                Button { advanceImage(by: -1) } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .disabled(imageEntries.first?.id == focusedImageID || imageEntries.count < 2)
+                .accessibilityLabel("Previous image")
+                Button { advanceImage(by: 1) } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .disabled(imageEntries.last?.id == focusedImageID || imageEntries.count < 2)
+                .accessibilityLabel("Next image")
             }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 2)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 10) {
+                    ForEach(imageEntries) { entry in
+                        if let data = entry.data, let image = NSImage(data: data) {
+                            imageTile(entry, image: image)
+                                .id(entry.id)
+                        }
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $focusedImageID)
+            .onAppear { reconcileFocusedImage() }
+            .onChange(of: imageEntries.map(\.id)) { _, _ in reconcileFocusedImage() }
+        }
+    }
+
+    private func advanceImage(by offset: Int) {
+        let entries = imageEntries
+        guard let index = entries.firstIndex(where: { $0.id == focusedImageID }),
+              entries.indices.contains(index + offset) else { return }
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.84)) {
+            focusedImageID = entries[index + offset].id
+        }
+    }
+
+    private func reconcileFocusedImage() {
+        guard !imageEntries.isEmpty else { focusedImageID = nil; return }
+        if !imageEntries.contains(where: { $0.id == focusedImageID }) {
+            focusedImageID = imageEntries.first?.id
+        }
+    }
+
+    private func imageTile(_ entry: ClipboardEntry, image: NSImage) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFit()
-                .frame(maxWidth: .infinity)
-                .frame(height: 290)
+                .frame(width: 210, height: 130)
                 .background(Color(white: 0.06), in: RoundedRectangle(cornerRadius: 8))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay(ClipboardDragSource(entry: entry, onDragChange: onDragChange))
                 .help("Drag image to a terminal tab")
                 .accessibilityLabel("Image preview")
+            HStack(spacing: 4) {
+                Text(entry.createdAt.formatted(date: .omitted, time: .shortened))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                actions(for: entry)
+            }
         }
-        .padding(10)
+        .padding(8)
+        .frame(width: 226)
         .background(Color(white: 0.10), in: RoundedRectangle(cornerRadius: 10))
     }
 
