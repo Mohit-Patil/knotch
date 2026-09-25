@@ -29,6 +29,7 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
             guard isClipboardEntry ? onClipboardDrop != nil
                     : (ExternalTerminalDrop.canAccept(sender.draggingPasteboard) && onExternalDrop != nil)
             else { return [] }
+            setDropHighlighted(true)
             hoverTimer?.invalidate()
             hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.22, repeats: false) { [weak self] _ in
                 Task { @MainActor [weak self] in
@@ -49,15 +50,24 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
         override func draggingExited(_ sender: NSDraggingInfo?) {
             hoverTimer?.invalidate()
             hoverTimer = nil
+            setDropHighlighted(false)
         }
 
         override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
             hoverTimer?.invalidate()
             hoverTimer = nil
+            setDropHighlighted(false)
             if let id = ClipboardTerminalDrop.entryID(from: sender.draggingPasteboard) {
                 return onClipboardDrop?(id) ?? false
             }
             return onExternalDrop?(sender.draggingPasteboard) ?? false
+        }
+
+        private func setDropHighlighted(_ highlighted: Bool) {
+            wantsLayer = true
+            layer?.cornerRadius = 7
+            layer?.backgroundColor = highlighted
+                ? NSColor.controlAccentColor.withAlphaComponent(0.35).cgColor : NSColor.clear.cgColor
         }
     }
     var onSelect: ((UUID) -> Void)?

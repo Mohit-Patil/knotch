@@ -23,6 +23,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var clipboard: ClipboardHistory?
     private var clipboardDragActive = false
     private var retainedDragSourceView: NSView?
+    private var dragBackdropView: NSView?
     private let clipboardImageExport = ClipboardImageExport()
     private var externalDropFolders: [URL] = []
     private var savedTerminalPanelSize: CGSize?
@@ -42,6 +43,11 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         clipboardDragChanged(true)
         defer { clipboardDragChanged(false) }
         return acceptClipboardDrop(entryID: entryID, sessionID: sessionID)
+    }
+    func acceptClipboardDropInNewTabForFixture(entryID: UUID) -> Bool {
+        clipboardDragChanged(true)
+        defer { clipboardDragChanged(false) }
+        return acceptClipboardDropInNewTab(entryID: entryID)
     }
     func acceptExternalTerminalDropForFixture(_ board: NSPasteboard, sessionID: UUID) -> Bool {
         acceptExternalDrop(board, destination: .terminal(sessionID))
@@ -234,12 +240,26 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             ("chevron.up", "Minimise Terminal", #selector(hideTerminal)),
             ("xmark", "Close Session…", #selector(closeSession))
         ] {
-            let button = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: title)!, target: self, action: action)
+            let button: NSButton
+            if action == #selector(newTab) {
+                let newTabButton = ClipboardNewTabButton(image: NSImage(systemSymbolName: symbol,
+                                                                       accessibilityDescription: title)!,
+                                                        target: self, action: action)
+                newTabButton.registerForDraggedTypes([ClipboardTerminalDrop.pasteboardType])
+                newTabButton.onClipboardDrop = { [weak self] entryID in
+                    self?.acceptClipboardDropInNewTab(entryID: entryID) ?? false
+                }
+                button = newTabButton
+            } else {
+                button = NSButton(image: NSImage(systemSymbolName: symbol,
+                                                accessibilityDescription: title)!, target: self, action: action)
+            }
             button.bezelStyle = .accessoryBarAction
             button.isBordered = false
             button.imagePosition = .imageOnly
             button.contentTintColor = .secondaryLabelColor
-            button.toolTip = title
+            button.toolTip = action == #selector(newTab)
+                ? "New Tab · Drop a Clipboard item here to open it in a new shell" : title
             button.setAccessibilityLabel(title)
             button.widthAnchor.constraint(equalToConstant: 28).isActive = true
             button.heightAnchor.constraint(equalToConstant: 28).isActive = true
@@ -366,8 +386,16 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         settingsView = nil
         if clipboardDragActive {
             // AppKit's drag source must stay attached to its window until the
-            // session ends. The terminal is placed above it for the drop.
+            // session ends. Cover it behind Ghostty so transparent terminal
+            // backgrounds never expose the Clipboard view during the drop.
             retainedDragSourceView = clipboardView
+            dragBackdropView?.removeFromSuperview()
+            let backdrop = NSView(frame: container.bounds)
+            backdrop.wantsLayer = true
+            backdrop.layer?.backgroundColor = NSColor.black.cgColor
+            backdrop.autoresizingMask = [.width, .height]
+            container.addSubview(backdrop)
+            dragBackdropView = backdrop
         } else {
             clipboardView?.removeFromSuperview()
         }
@@ -561,6 +589,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         clipboardDragActive = dragging
         overlay?.setInteractionLock("clipboard-drag", dragging)
         if !dragging {
+            dragBackdropView?.removeFromSuperview()
+            dragBackdropView = nil
             retainedDragSourceView?.removeFromSuperview()
             retainedDragSourceView = nil
         }
@@ -572,8 +602,45 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
               store.sessions.contains(where: { $0.id == sessionID && $0.isRunning }) else { return false }
         // Complete AppKit's drag first. This also lets the source release its
         // presentation lock before any unsafe-paste confirmation is shown.
-        Task { @MainActor [weak self] in self?.insertClipboardEntry(entry, into: sessionID) }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.insertClipboardEntry(entry, into: sessionID)
+            self.finishClipboardDropPresentation()
+        }
         return true
+    }
+
+    private func acceptClipboardDropInNewTab(entryID: UUID) -> Bool {
+        guard clipboardDragActive,
+              let entry = clipboard?.entries.first(where: { $0.id == entryID }) else { return false }
+        let count = store.sessions.count
+        open(directory: store.session?.directory ?? FileManager.default.homeDirectoryForCurrentUser)
+        guard store.sessions.count == count + 1, let sessionID = store.session?.id else { return false }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            // A fresh login shell can echo pasted bytes before its prompt is
+            // ready. Prefer its first title update; bound the wait for shells
+            // that do not publish titles.
+            for _ in 0..<20 {
+                guard let session = self.store.sessions.first(where: { $0.id == sessionID }) as? GhosttySession,
+                      session.isRunning else {
+                    self.finishClipboardDropPresentation()
+                    return
+                }
+                if !session.title.isEmpty { break }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+            self.insertClipboardEntry(entry, into: sessionID)
+            self.finishClipboardDropPresentation()
+        }
+        return true
+    }
+
+    private func finishClipboardDropPresentation() {
+        clipboardDragChanged(false)
+        container.needsDisplay = true
+        attachedSession?.view.needsDisplay = true
     }
 
     private func insertClipboardEntry(_ entry: ClipboardEntry, into sessionID: UUID) {

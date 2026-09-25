@@ -109,3 +109,7 @@ The owner screenshot showed a notch drop opening a shell and leaving a private P
 ## Saved screenshot to terminal drag
 
 Native UI automation opened a home shell, selected Clipboard, and physically dragged the saved 11:02 PM screenshot tile onto its terminal tab. The same live Ghostty terminal showed the private PNG path at the prompt without Return. The exported file existed with owner-only `0600` permissions. This verifies the carousel-to-terminal drag in the installed app. A separate drag from macOS's floating screenshot thumbnail into the notch has not been physically exercised.
+
+## Clipboard drag refinement
+
+Terminal tabs now highlight while a Clipboard or external item is over them. The New Tab toolbar button accepts saved Clipboard items, so a screenshot can open a home shell and insert its private path in one drop when no terminal exists. During the drop, an opaque backdrop covers the retained Clipboard drag source behind Ghostty; the source and backdrop are removed explicitly after insertion. New-tab insertion waits briefly for shell startup so the path does not echo before the prompt. The test and Release builds, 36-check Clipboard fixture, 10-check Settings fixture, and model tests passed. Native UI automation physically dropped the saved screenshot both on New Tab and on an existing terminal tab in the installed app. The final new-tab screenshot showed one private path at the prompt, no early duplicate line, and no Clipboard bleed-through. The tab-hover highlight itself was not captured mid-drag.

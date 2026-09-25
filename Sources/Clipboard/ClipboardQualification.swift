@@ -298,6 +298,31 @@ enum ClipboardQualification {
             coordinator.overlay?.hide(restoreFocus: false)
             session.view.removeFromSuperview()
             coordinator.store.closeAfterConfirmation(id: session.id)
+
+            coordinator.showClipboard()
+            let savedImage = restored.entries.first { $0.kind == .image }
+            let openedWithImage = savedImage.map {
+                coordinator.acceptClipboardDropInNewTabForFixture(entryID: $0.id)
+            } ?? false
+            let newSession = coordinator.store.session as? GhosttySession
+            if let newSession, let savedImage {
+                try? await HarnessQualification.waitFor({
+                    HarnessQualification.screen(newSession).contains(savedImage.id.uuidString)
+                }, description: "saved image drop on new tab")
+            }
+            let insertedIntoNew: Bool
+            if let newSession, let savedImage {
+                insertedIntoNew = HarnessQualification.screen(newSession).contains(savedImage.id.uuidString)
+            } else {
+                insertedIntoNew = false
+            }
+            check("Saved image drop creates terminal tab", openedWithImage
+                  && coordinator.store.sessions.count == 1
+                  && newSession?.isRunning == true
+                  && insertedIntoNew,
+                  "A Clipboard image dragged onto New Tab starts a real Ghostty shell and inserts its private path without Return")
+            newSession?.view.removeFromSuperview()
+            if let id = newSession?.id { coordinator.store.closeAfterConfirmation(id: id) }
         } else {
             check("Clipboard tab keeps shell", false, "Fixture Ghostty session failed to start")
         }

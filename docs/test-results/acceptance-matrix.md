@@ -190,3 +190,7 @@ A screenshot dropped on the notch handle or panel background now saves to local 
 ## Saved screenshot carousel drag follow-up
 
 PASS: Native UI automation dragged a saved image tile from Clipboard onto a live terminal tab in the installed app. The tab selected and the same Ghostty surface displayed the private PNG path at its prompt without Return. The file existed with `0600` permissions. This proves carousel-to-terminal drag for the tested image and display; physical floating-thumbnail-to-notch delivery remains NOT_RUN.
+
+## Clipboard drag refinement follow-up
+
+PASS: New Tab accepts a saved Clipboard item as a drop, creates a real Ghostty home shell, and inserts its path without Return. Existing terminal tabs gain a drag-hover highlight. The 36-check native Clipboard fixture passed, including a fresh-shell image drop; Settings and model checks passed and both builds succeeded. Native UI automation verified the installed final build by physically dropping a saved screenshot on New Tab and an existing tab. The new shell showed one private path at the prompt, with no duplicate pre-prompt echo or Clipboard bleed-through. The hover highlight was not captured mid-drag, and floating-thumbnail-to-notch delivery remains NOT_RUN.
