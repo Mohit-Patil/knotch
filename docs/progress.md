@@ -17,3 +17,7 @@ The original specification under `notch_terminal_handoff/` is preserved. Knotch 
 Environment: macOS 26.6.2 (25G83), arm64 MacBook Air M5 with 16 GB RAM and a built-in 2560×1664 Retina display; Xcode 27.0 (27A266a), macOS SDK 27.0, Swift 6.4, Zig 0.16.0. The selected deployment target is macOS 26.0. See [compatibility](compatibility.md) for the untested environments and behaviors.
 
 Final validation at source checkpoint `fc1081e`: optimized shipping/test builds and ad-hoc signature verification passed; `scripts/test-models.sh` passed; `scripts/test-native.sh all` passed 11 engine and 12 native controller checks. Normal Launch Services `open` succeeded, showing the empty alpha without session replay. Full [acceptance inventory and evidence](test-results/acceptance-matrix.md) records every remaining item. The app was left open without a shell for the owner to try.
+
+## Owner correction: notch placement and minimise
+
+The screenshot exposed a detached pill/stacked-panel layout and launch into persistent typing mode. These are corrected: hardware-aligned black cap, terminal directly adjoining it, collapsed launch, and pointer-exit minimising even after activation, postponed by typing or interaction locks. This is the owner's explicit refinement of the original focus rule. Model tests and 17 revised native controller checks passed. See [decision and precise evidence boundaries](decisions/0002-notch-attachment-and-minimise.md).

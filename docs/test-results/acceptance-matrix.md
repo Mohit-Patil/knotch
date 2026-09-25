@@ -1,5 +1,7 @@
 # Qualification report — September 25, 2026
 
+**Follow-up:** The owner reported the detached panel and requested automatic minimising even after activation, except during typing/selection/dialogs. The [notch/minimise correction](../decisions/0002-notch-attachment-and-minimise.md) supersedes the initial placement and focus-hold behavior below. See [revised native results](overlay-notch-fix.json). Physical cross-app pointer qualification remains NOT_RUN.
+
 Native one-session alpha built at source checkpoint `fc1081e95f61ab4f74392e29df5f0055f32188f0` in Release (Swift 6 whole-module optimization), with `HARNESS_TESTS` enabled only for fixture builds. The earlier ordinary-window engine checkpoint is `e7ce016c12ca49ae2805cd5c2b9d00aea66857ee`. Original acceptance inventory and handoff documents are unchanged.
 
 Environment: macOS 26.6.2 (25G83), Apple Silicon MacBook Air M5 (Mac17,3), 16 GB, built-in 2560×1664 Retina display. Xcode 27.0 (27A266a), macOS SDK 27.0, Swift 6.4, Zig 0.16.0, XcodeGen 2.46.0. Deployment target macOS 26, arm64 only. Clean fixtures use `/bin/zsh -f`; manual agent tests use the discovered system login shell. No provider credential files were inspected and no agent trust or paid action was approved.
@@ -45,7 +47,7 @@ The numeric exit-status limitation is upstream and remains: controlled `exit 7` 
 | UX-02 | NOT_RUN | Real NSPanel preview preserved ordinary NSTextView key window and responder, with terminal state unchanged. Supplied tracking events and same-app editor are not the specified cross-app physical test. |
 | UX-03 | PASSED | Native accessory-mode panel clicked using computer control, printf reached real shell. Controller activation also installed terminal first responder. |
 | UX-04 | NOT_RUN | Public hotkey registration and UI enable/disable succeeded. Targeted automation key input did not prove global Carbon delivery from another app. |
-| UX-05 | NOT_RUN | Supplied pointer-exit event left actual interactive panel key/visible. Physical pointer exit while typing remains. |
+| UX-05 | NOT_RUN | Owner refinement: idle pointer exit now minimises; actual terminal input postpones it for 1.5 seconds. Native controller regression passed; physical pointer exit while typing remains unqualified. |
 | UX-06 | NOT_RUN | Real controller timer/reentry test PASSED. Physical mouse reentry remains. |
 | UX-07 | NOT_RUN | Adjacent handle/panel geometry and supplied bridge events tested; physical bridge crossing remains. |
 | UX-08 | PASSED | Raw-mode terminal fixture received byte 27 for Escape; actual panel stayed interactive. |
