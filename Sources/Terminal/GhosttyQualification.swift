@@ -213,6 +213,8 @@ enum HarnessQualification {
             overlay.send(.pointerExitedPanel)
             try await Task.sleep(for: .milliseconds(1700))
             try check("Selection prevents minimise", overlay.panel.isVisible, "An active interaction lock held the panel beyond typing grace")
+            // Opening the chosen project reactivates while its picker lock is still held.
+            overlay.activate()
             overlay.setInteractionLock("selection-fixture", false)
             try await waitFor({ !overlay.panel.isVisible }, description: "minimise after interaction ends")
             overlay.activate()

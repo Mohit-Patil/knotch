@@ -129,8 +129,12 @@ struct OverlayState {
 
         case .activate:
             cancelPending(&effects)
-            exitIntent = false
-            lastTerminalInputAt = nil
+            // A dialog can reactivate the terminal before releasing its lock.
+            // Keep an actual pointer departure so unlock can finish minimising;
+            // a fresh keyboard-only activation still has no exit intent.
+            let retainLockedExit = !interactionLocks.isEmpty && exitIntent
+            exitIntent = retainLockedExit
+            if !retainLockedExit { lastTerminalInputAt = nil }
             if presentation != .interactive || !ownsFocus {
                 ownsFocus = true
                 changePresentation(.interactive, &effects)

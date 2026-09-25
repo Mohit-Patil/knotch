@@ -8,6 +8,7 @@ struct ModelTests {
         testActivationFocusPinAndHide()
         testInteractiveExitAndTypingGrace()
         testInteractiveLocksAndKeyboardOnlyAccess()
+        testDialogReactivationRetainsExit()
         testDisplayAndNotifications()
         testGeometry()
         testRandomizedTransitions()
@@ -153,6 +154,38 @@ struct ModelTests {
         expect(state.send(.terminalInput, now: 9).isEmpty
                && state.presentation == .collapsed && !state.ownsFocus,
                "input notification cannot reopen a hidden panel")
+    }
+
+    static func testDialogReactivationRetainsExit() {
+        var state = OverlayState()
+        state.send(.activate, now: 0)
+        state.send(.pointerEnteredPanel, now: 0.1)
+        state.send(.lockAdded("dialog"), now: 0.2)
+        expect(state.send(.pointerExitedPanel, now: 0.3).isEmpty,
+               "pointer exit during dialog is held without a timer")
+        state.send(.terminalInput, now: 0.4)
+        state.send(.focusLost, now: 0.5)
+        expect(state.presentation == .preview, "dialog holds preview after focus moves")
+        state.send(.activate, now: 1.0)
+        expect(state.presentation == .interactive, "opening selected directory can reactivate under dialog lock")
+        let unlocked = state.send(.lockRemoved("dialog"), now: 1.1)
+        let token = exitToken(unlocked)
+        expect(exitDeadline(unlocked) >= 1.9,
+               "reactivation preserves pointer exit and last-input grace until unlock")
+        state.send(.timerFired(token), now: 1.89)
+        expect(state.presentation == .interactive, "last-input grace still holds after dialog")
+        let collapsed = state.send(.timerFired(token), now: 1.91)
+        expect(state.presentation == .collapsed && collapsed.contains(.releaseFocus),
+               "dialog release eventually minimises and releases focus")
+
+        var shortcut = OverlayState()
+        shortcut.send(.lockAdded("dialog"), now: 0)
+        shortcut.send(.activate, now: 0.1)
+        expect(shortcut.send(.lockRemoved("dialog"), now: 0.2).isEmpty,
+               "fresh shortcut under lock has no invented pointer exit")
+        shortcut.send(.timerFired(999), now: 2)
+        expect(shortcut.presentation == .interactive,
+               "keyboard-only activation remains open after lock release")
     }
 
     static func testDisplayAndNotifications() {
