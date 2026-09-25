@@ -21,6 +21,9 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var settingsView: NSView?
     private var clipboardView: NSView?
     private var clipboard: ClipboardHistory?
+    private var clipboardDragActive = false
+    private var retainedDragSourceView: NSView?
+    private let clipboardImageExport = ClipboardImageExport()
     private var savedTerminalPanelSize: CGSize?
     private var runningQualification = false
     private var tabHeight: NSLayoutConstraint?
@@ -29,6 +32,15 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     #if HARNESS_TESTS
     func useClipboardForFixture(_ history: ClipboardHistory) { clipboard?.stop(); clipboard = history }
+    func hoverClipboardTabForFixture(sessionID: UUID) {
+        clipboardDragChanged(true)
+        selectSession(id: sessionID)
+    }
+    func acceptClipboardDropForFixture(entryID: UUID, sessionID: UUID) -> Bool {
+        clipboardDragChanged(true)
+        defer { clipboardDragChanged(false) }
+        return acceptClipboardDrop(entryID: entryID, sessionID: sessionID)
+    }
     #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -234,6 +246,13 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         tabs.onClose = { [weak self] in self?.closeTab(id: $0) }
         tabs.onRename = { [weak self] in self?.renameSession(id: $0) }
+        tabs.onClipboardHover = { [weak self] sessionID in
+            guard let self, self.clipboardDragActive else { return }
+            self.selectSession(id: sessionID)
+        }
+        tabs.onClipboardDrop = { [weak self] entryID, sessionID in
+            self?.acceptClipboardDrop(entryID: entryID, sessionID: sessionID) ?? false
+        }
         tabs.onMenuLock = { [weak self] open in
             self?.overlay?.setInteractionLock("tab-menu", open)
             self?.overlay?.setSystemDialogPresented(open)
@@ -329,13 +348,20 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func attach(_ session: any TerminalSession) {
-        overlay?.setCompactPanelSize(nil)
+        let fromClipboard = clipboardSelected
+        overlay?.setCompactPanelSize(nil, animated: fromClipboard)
         if settingsSelected { overlay?.setInteractionLock("settings-recording", false) }
         settingsSelected = false
         clipboardSelected = false
         settingsView?.removeFromSuperview()
         settingsView = nil
-        clipboardView?.removeFromSuperview()
+        if clipboardDragActive {
+            // AppKit's drag source must stay attached to its window until the
+            // session ends. The terminal is placed above it for the drop.
+            retainedDragSourceView = clipboardView
+        } else {
+            clipboardView?.removeFromSuperview()
+        }
         clipboardView = nil
         if attachedSession !== session {
             attachedSession?.setFocused(false)
@@ -357,6 +383,11 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.open(directory: session.directory)
         }
         session.onActivate = { [weak self] in self?.selectSession(id: id) }
+        if let ghostty = session as? GhosttySession {
+            ghostty.nativeView.onClipboardDrop = { [weak self] entryID in
+                self?.acceptClipboardDrop(entryID: entryID, sessionID: id) ?? false
+            }
+        }
         session.onInput = { [weak self] in
             guard let self, !self.settingsSelected, !self.clipboardSelected, self.store.selectedID == id else { return }
             self.overlay?.send(.terminalInput)
@@ -496,8 +527,11 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             emptyView?.removeFromSuperview()
             emptyView = nil
             clipboardSelected = true
-            overlay?.setCompactPanelSize(CGSize(width: 820, height: 560))
-            let view = NSHostingView(rootView: ClipboardView(history: clipboard))
+            overlay?.setCompactPanelSize(CGSize(width: 820, height: 560), animated: true)
+            let view = NSHostingView(rootView: ClipboardView(history: clipboard,
+                                                              onDragChange: { [weak self] dragging in
+                self?.clipboardDragChanged(dragging)
+            }))
             view.frame = container.bounds
             view.autoresizingMask = [.width, .height]
             container.addSubview(view)
@@ -507,6 +541,60 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         clipboard.captureChange()
         showTerminal()
+    }
+
+    private func clipboardDragChanged(_ dragging: Bool) {
+        clipboardDragActive = dragging
+        overlay?.setInteractionLock("clipboard-drag", dragging)
+        if !dragging {
+            retainedDragSourceView?.removeFromSuperview()
+            retainedDragSourceView = nil
+        }
+    }
+
+    private func acceptClipboardDrop(entryID: UUID, sessionID: UUID) -> Bool {
+        guard clipboardDragActive,
+              let entry = clipboard?.entries.first(where: { $0.id == entryID }),
+              store.sessions.contains(where: { $0.id == sessionID && $0.isRunning }) else { return false }
+        // Complete AppKit's drag first. This also lets the source release its
+        // presentation lock before any unsafe-paste confirmation is shown.
+        Task { @MainActor [weak self] in self?.insertClipboardEntry(entry, into: sessionID) }
+        return true
+    }
+
+    private func insertClipboardEntry(_ entry: ClipboardEntry, into sessionID: UUID) {
+        guard let session = store.sessions.first(where: { $0.id == sessionID && $0.isRunning }) as? GhosttySession else { return }
+        let text: String
+        do {
+            switch entry.kind {
+            case .text, .link, .richText:
+                guard let value = entry.text, !value.isEmpty else { return }
+                text = value
+            case .files:
+                guard let paths = entry.fileURLs, !paths.isEmpty,
+                      paths.allSatisfy(\.isFileURL) else { return }
+                let escaped = paths.compactMap { ClipboardTerminalDrop.escapedPath($0.path) }
+                guard escaped.count == paths.count else { return }
+                text = escaped.joined(separator: " ")
+            case .image:
+                let path = try clipboardImageExport.path(for: entry)
+                guard let escaped = ClipboardTerminalDrop.escapedPath(path) else { return }
+                text = escaped
+            }
+        } catch {
+            showError(error)
+            return
+        }
+        if ClipboardTerminalDrop.needsConfirmation(text) {
+            let alert = NSAlert()
+            alert.messageText = "Insert multiline or control text into the terminal?"
+            alert.informativeText = "The terminal program may interpret this text as commands. Dropping does not press Return."
+            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: "Insert")
+            guard runAppDialog({ alert.runModal() }) == .alertSecondButtonReturn else { return }
+        }
+        selectSession(id: sessionID)
+        _ = session.nativeView.insertDroppedText(text)
     }
     @objc func showAccessSettings() {
         if shortcut == nil { shortcut = ShortcutController() }
@@ -573,6 +661,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         store.closeAllAfterConfirmation()
+        clipboardImageExport.cleanUp()
         clipboard?.stop()
         shortcut?.shutdown()
         runtime?.shutdown()

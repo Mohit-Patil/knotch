@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ClipboardView: View {
     @ObservedObject var history: ClipboardHistory
+    let onDragChange: (Bool) -> Void
     @State private var query = ""
     @State private var confirmClearAll = false
 
@@ -55,6 +56,9 @@ struct ClipboardView: View {
                                                          : "No items match your search."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                Label("Drag an item onto a terminal tab", systemImage: "arrow.up.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         ForEach(visible) { entry in
@@ -82,6 +86,8 @@ struct ClipboardView: View {
             thumbnail(entry)
                 .frame(width: 64, height: 58)
                 .background(Color(white: 0.15), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(ClipboardDragSource(entry: entry, onDragChange: onDragChange))
+                .help("Drag to a terminal tab")
             VStack(alignment: .leading, spacing: 4) {
                 Text(entry.label)
                     .lineLimit(2)

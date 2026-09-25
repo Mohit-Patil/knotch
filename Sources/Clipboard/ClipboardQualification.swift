@@ -52,6 +52,29 @@ enum ClipboardQualification {
         history.captureChange()
         check("Image capture", history.entries.first?.kind == .image && history.entries.first?.data == png,
               "A small PNG image was captured with its binary representation")
+        if let image = history.entries.first {
+            let export = ClipboardImageExport(base: folder, processID: 12345)
+            let imagePath = try? export.path(for: image)
+            let imageMode = imagePath.flatMap { (try? FileManager.default.attributesOfItem(atPath: $0)[.posixPermissions] as? NSNumber)?.intValue }
+            let exported = imagePath.flatMap { try? Data(contentsOf: URL(fileURLWithPath: $0)) }
+            check("Image drop exports private file", exported == png && imageMode == 0o600,
+                  "A screenshot drop creates an owner-only image file with the original bytes")
+            export.cleanUp()
+            check("Image drop cleanup", imagePath.map { !FileManager.default.fileExists(atPath: $0) } ?? false,
+                  "The app removes its exported image when the session ends")
+        }
+
+        let dragBoard = NSPasteboard.withUniqueName()
+        dragBoard.setString(UUID().uuidString, forType: ClipboardTerminalDrop.pasteboardType)
+        check("Private drag identifier", ClipboardTerminalDrop.entryID(from: dragBoard) != nil,
+              "The destination resolves an opaque internal entry ID")
+        dragBoard.releaseGlobally()
+        check("File path escaping", ClipboardTerminalDrop.escapedPath("/tmp/a b'c.png") == "/tmp/a\\ b\\'c.png"
+              && ClipboardTerminalDrop.escapedPath("/tmp/a\nb") == nil,
+              "Dropped file paths escape shell metacharacters and reject control characters")
+        check("Unsafe text detection", ClipboardTerminalDrop.needsConfirmation("echo one\necho two")
+              && !ClipboardTerminalDrop.needsConfirmation("plain text"),
+              "Multiline clipboard text requires confirmation before insertion")
 
         board.clearContents()
         board.writeObjects([folder.appendingPathComponent("fixture.txt") as NSURL])
@@ -134,6 +157,35 @@ enum ClipboardQualification {
             coordinator.selectSession(id: session.id)
             check("Return to shell", session.surface == surface && session.view.superview === coordinator.container,
                   "Returning from Clipboard presents the same terminal view")
+            let marker = folder.appendingPathComponent("drop-must-not-run")
+            let command = "touch \(marker.path)"
+            board.clearContents()
+            board.setString(command, forType: .string)
+            restored.captureChange()
+            coordinator.showClipboard()
+            coordinator.overlay?.settlePresentationForFixture()
+            NSApp.activate()
+            coordinator.overlay?.panel.makeKeyAndOrderFront(nil)
+            try? await HarnessQualification.waitFor({ coordinator.overlay?.panel.isKeyWindow == true },
+                                                    timeout: 3, description: "clipboard panel activation")
+            coordinator.hoverClipboardTabForFixture(sessionID: session.id)
+            check("Drag hover focuses terminal", coordinator.store.selectedID == session.id
+                  && coordinator.overlay?.panel.firstResponder === session.view
+                  && session.surface == surface,
+                  "Selected=\(coordinator.store.selectedID == session.id), key=\(coordinator.overlay?.panel.isKeyWindow == true), responder=\(coordinator.overlay?.panel.firstResponder === session.view), sameSurface=\(session.surface == surface)")
+            let accepted = restored.entries.first.map {
+                coordinator.acceptClipboardDropForFixture(entryID: $0.id, sessionID: session.id)
+            } ?? false
+            do {
+                try await HarnessQualification.waitFor({
+                    HarnessQualification.screen(session).contains(command)
+                }, description: "clipboard drop insertion")
+                check("Drop inserts without Return", accepted && !FileManager.default.fileExists(atPath: marker.path)
+                      && session.surface == surface,
+                      "Ghostty received text in the same live surface; the command did not run")
+            } catch {
+                check("Drop inserts without Return", false, error.localizedDescription)
+            }
             coordinator.overlay?.hide(restoreFocus: false)
             session.view.removeFromSuperview()
             coordinator.store.closeAfterConfirmation(id: session.id)

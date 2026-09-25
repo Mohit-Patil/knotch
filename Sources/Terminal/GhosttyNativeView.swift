@@ -29,6 +29,7 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient {
 
     var onActivate: (() -> Void)?
     var onInput: (() -> Void)?
+    var onClipboardDrop: ((UUID) -> Bool)?
     /// The panel uses this to hold its presentation while selection or IME input is active.
     var onInteractionLock: ((Bool) -> Void)?
 
@@ -61,6 +62,7 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient {
     }
 
     private func installInputObservers() {
+        registerForDraggedTypes([ClipboardTerminalDrop.pasteboardType])
         // AppKit does not reliably deliver Command key-up through the responder chain.
         keyUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyUp) { [weak self] event in
             MainActor.assumeIsolated {
@@ -153,6 +155,30 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient {
 
     @objc func copy(_ sender: Any?) { onInput?(); binding("copy_to_clipboard") }
     @objc func paste(_ sender: Any?) { onInput?(); binding("paste_from_clipboard") }
+
+    /// Ghostty's native text entry uses paste semantics, including bracketed
+    /// paste when enabled. The drop path never synthesizes Return or keys.
+    @discardableResult
+    func insertDroppedText(_ text: String) -> Bool {
+        guard let surface, isPresented, !text.isEmpty else { return false }
+        onInput?()
+        text.withCString { ghostty_surface_text(surface, $0, UInt(text.utf8.count)) }
+        return true
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        ClipboardTerminalDrop.entryID(from: sender.draggingPasteboard) != nil
+            && onClipboardDrop != nil ? .copy : []
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        draggingEntered(sender)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let id = ClipboardTerminalDrop.entryID(from: sender.draggingPasteboard) else { return false }
+        return onClipboardDrop?(id) ?? false
+    }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.type == .keyDown, window?.firstResponder === self,

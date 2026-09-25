@@ -1,0 +1,7 @@
+# Clipboard drag into the live terminal
+
+The owner requested a screenshot drag from the in-notch Clipboard tab to a terminal, with a smooth hover transition. A drag begins on the item's thumbnail and carries only a Knotch-specific UUID pasteboard type. Hovering over a terminal tab for 220 ms selects that existing session and gives its Ghostty surface the native first responder; dropping on the tab or surface resolves the UUID against live history. The source view stays in the panel under the terminal until AppKit ends the drag.
+
+Text, links, and rich text insert their plain-text representation through `ghostty_surface_text`, Ghostty's embedded paste path. Multiple file URLs become shell-escaped paths separated by spaces. PNG/TIFF images are exported to an owner-only process temporary directory and only the escaped path is inserted; no image bytes are sent as terminal text. No drop synthesizes Return. Multiline and control text requires a confirmation dialog. Exported images are deleted on normal app quit, alongside the app's terminal sessions. A crash may leave a temporary file until system cleanup.
+
+The expanded Clipboard-to-terminal size change uses the existing display-linked spring and honors Reduce Motion. Native fixtures verify the pasteboard ID, path escaping, private image export and cleanup, and insertion into a real Ghostty shell without executing the command. They do not prove that a physical macOS drag, hover timing, and visual frame pacing are correct on every display; those remain manual acceptance work.

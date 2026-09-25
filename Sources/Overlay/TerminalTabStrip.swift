@@ -14,13 +14,45 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
     private final class TabButton: NSButton {
         var sessionID: UUID?
         var onRename: (() -> Void)?
+        var onClipboardHover: (() -> Void)?
+        var onClipboardDrop: ((UUID) -> Bool)?
+        private var hoverTimer: Timer?
+
         override func mouseDown(with event: NSEvent) {
             if event.clickCount == 2 { onRename?() } else { super.mouseDown(with: event) }
+        }
+
+        override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+            guard ClipboardTerminalDrop.entryID(from: sender.draggingPasteboard) != nil,
+                  onClipboardDrop != nil else { return [] }
+            hoverTimer?.invalidate()
+            hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.22, repeats: false) { [weak self] _ in
+                Task { @MainActor [weak self] in self?.onClipboardHover?() }
+            }
+            return .copy
+        }
+
+        override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+            ClipboardTerminalDrop.entryID(from: sender.draggingPasteboard) == nil ? [] : .copy
+        }
+
+        override func draggingExited(_ sender: NSDraggingInfo?) {
+            hoverTimer?.invalidate()
+            hoverTimer = nil
+        }
+
+        override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+            hoverTimer?.invalidate()
+            hoverTimer = nil
+            guard let id = ClipboardTerminalDrop.entryID(from: sender.draggingPasteboard) else { return false }
+            return onClipboardDrop?(id) ?? false
         }
     }
     var onSelect: ((UUID) -> Void)?
     var onClose: ((UUID) -> Void)?
     var onRename: ((UUID) -> Void)?
+    var onClipboardHover: ((UUID) -> Void)?
+    var onClipboardDrop: ((UUID, UUID) -> Bool)?
     var onMenuLock: ((Bool) -> Void)?
     private let scroll = NSScrollView()
     private let document = NSView()
@@ -69,6 +101,13 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
             button.setAccessibilityLabel("\(item.title), \(status)\(active ? ", selected" : "")")
             button.target = self
             button.action = #selector(selectTab(_:))
+            if !item.isSettings && !item.isClipboard {
+                button.registerForDraggedTypes([ClipboardTerminalDrop.pasteboardType])
+                button.onClipboardHover = { [weak self] in self?.onClipboardHover?(item.id) }
+                button.onClipboardDrop = { [weak self] entryID in
+                    self?.onClipboardDrop?(entryID, item.id) ?? false
+                }
+            }
             if !item.isSettings && !item.isClipboard { button.onRename = { [weak self] in self?.onRename?(item.id) } }
             if !item.isSettings && !item.isClipboard {
                 let menu = NSMenu()
