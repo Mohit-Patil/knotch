@@ -13,6 +13,9 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let statusLabel = NSTextField(labelWithString: "Terminal")
     private var closeButton: NSButton?
     let container = NSView()
+    private let tabs = TerminalTabStrip()
+    private var tabHeight: NSLayoutConstraint?
+    private weak var attachedSession: (any TerminalSession)?
     var quitting = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -85,11 +88,19 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "Show Terminal", action: #selector(showTerminal), keyEquivalent: "0").target = self
+        appMenu.addItem(withTitle: "New Tab", action: #selector(newTab), keyEquivalent: "t").target = self
+        appMenu.addItem(withTitle: "Rename Tab…", action: #selector(renameSelectedTab), keyEquivalent: "").target = self
         appMenu.addItem(withTitle: "Open Project…", action: #selector(chooseProject), keyEquivalent: "o").target = self
         appMenu.addItem(withTitle: "Open Home Shell", action: #selector(openHome), keyEquivalent: "").target = self
         appMenu.addItem(withTitle: "Minimise Terminal", action: #selector(hideTerminal), keyEquivalent: "h").target = self
         appMenu.addItem(withTitle: "Close Session…", action: #selector(closeSession), keyEquivalent: "w").target = self
         appMenu.addItem(withTitle: "Access & Shortcut…", action: #selector(showAccessSettings), keyEquivalent: ",").target = self
+        appMenu.addItem(.separator())
+        for number in 1...9 {
+            let item = appMenu.addItem(withTitle: "Select Tab \(number)", action: #selector(selectNumberedTab(_:)), keyEquivalent: String(number))
+            item.tag = number - 1
+            item.target = self
+        }
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit Knotch…", action: #selector(quitApp), keyEquivalent: "q").target = self
         appItem.submenu = appMenu
@@ -134,6 +145,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         toolbar.addArrangedSubview(spacer)
         for (symbol, title, action) in [
+            ("plus", "New Tab", #selector(newTab)),
+            ("folder.badge.plus", "New Project Tab…", #selector(chooseProject)),
             ("slider.horizontal.3", "Access & Shortcut…", #selector(showAccessSettings)),
             ("chevron.up", "Minimise Terminal", #selector(hideTerminal)),
             ("xmark", "Close Session…", #selector(closeSession))
@@ -150,7 +163,13 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if action == #selector(closeSession) { closeButton = button; button.isEnabled = false }
             toolbar.addArrangedSubview(button)
         }
-        for view in [toolbar, container] { view.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(view) }
+        tabs.onSelect = { [weak self] in self?.selectSession(id: $0) }
+        tabs.onClose = { [weak self] in self?.closeTab(id: $0) }
+        tabs.onRename = { [weak self] in self?.renameSession(id: $0) }
+        tabs.onMenuLock = { [weak self] in self?.overlay?.setInteractionLock("tab-menu", $0) }
+        tabHeight = tabs.heightAnchor.constraint(equalToConstant: 0)
+        tabHeight?.isActive = true
+        for view in [toolbar, tabs, container] { view.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(view) }
         NSLayoutConstraint.activate([
             terminalIcon.widthAnchor.constraint(equalToConstant: 18),
             statusLabel.widthAnchor.constraint(lessThanOrEqualTo: root.widthAnchor, multiplier: 0.28),
@@ -158,7 +177,10 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             toolbar.topAnchor.constraint(equalTo: root.topAnchor, constant: 6),
             toolbar.heightAnchor.constraint(equalToConstant: 28),
             toolbar.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
-            container.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 6),
+            tabs.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 6),
+            tabs.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            tabs.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            container.topAnchor.constraint(equalTo: tabs.bottomAnchor),
             container.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             container.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             container.bottomAnchor.constraint(equalTo: root.bottomAnchor)
@@ -168,6 +190,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func showEmptyState() {
+        emptyView?.removeFromSuperview()
         let empty = NSHostingView(rootView: VStack(spacing: 22) {
             Image(systemName: "terminal")
                 .font(.system(size: 30, weight: .light))
@@ -195,33 +218,50 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func updateStatus() {
+        tabs.isHidden = store.sessions.isEmpty
+        tabHeight?.constant = store.sessions.isEmpty ? 0 : 38
+        tabs.update(store.sessions.map { .init(id: $0.id, title: $0.displayTitle, directory: $0.directory.path, running: $0.isRunning) }, selected: store.selectedID)
         guard let session = store.session else {
             statusLabel.stringValue = "Terminal"
             statusLabel.toolTip = nil
             closeButton?.isEnabled = false
             return
         }
-        let name = session.directory == FileManager.default.homeDirectoryForCurrentUser
-            ? "Home" : session.directory.lastPathComponent
+        let name = session.displayTitle
         statusLabel.stringValue = session.isRunning ? name : "\(name) · \(session.status)"
         statusLabel.toolTip = session.directory.path
         closeButton?.isEnabled = true
     }
 
     func attach(_ session: any TerminalSession) {
+        if attachedSession !== session {
+            attachedSession?.setFocused(false)
+            attachedSession?.setPresented(false)
+            attachedSession?.view.removeFromSuperview()
+            overlay?.setInteractionLock("terminal", false)
+        }
+        attachedSession = session
         emptyView?.removeFromSuperview()
         emptyView = nil
         session.view.frame = container.bounds
         session.view.autoresizingMask = [.width, .height]
-        container.addSubview(session.view)
-        session.onStatusChange = { [weak self, weak session] in
-            if self?.store.session == nil { self?.statusLabel.stringValue = session?.status ?? "No session" }
-            else { self?.updateStatus() }
+        if session.view.superview !== container { container.addSubview(session.view) }
+        let id = session.id
+        session.onStatusChange = { [weak self] in self?.updateStatus() }
+        session.onCloseRequested = { [weak self] in self?.closeTab(id: id) }
+        session.onNewTabRequested = { [weak self, weak session] in
+            guard let self, self.store.selectedID == id, self.store.sessions.contains(where: { $0.id == id }), let session else { return }
+            self.open(directory: session.directory)
         }
-        session.onCloseRequested = { [weak self] in self?.closeSession() }
-        session.onActivate = { [weak self] in self?.showTerminal() }
-        session.onInput = { [weak self] in self?.overlay?.send(.terminalInput) }
-        session.onInteractionLock = { [weak self] locked in self?.overlay?.setInteractionLock("terminal", locked) }
+        session.onActivate = { [weak self] in self?.selectSession(id: id) }
+        session.onInput = { [weak self] in
+            guard let self, self.store.selectedID == id else { return }
+            self.overlay?.send(.terminalInput)
+        }
+        session.onInteractionLock = { [weak self] locked in
+            guard let self, self.store.selectedID == id else { return }
+            self.overlay?.setInteractionLock("terminal", locked)
+        }
         updateStatus()
         window?.layoutIfNeeded()
         if let overlay { overlay.sessionChanged() }
@@ -230,6 +270,40 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             window?.makeFirstResponder(session.view)
             session.setFocused(true)
         }
+    }
+
+    func selectSession(id: UUID) {
+        guard store.sessions.contains(where: { $0.id == id }) else { return }
+        store.select(id: id)
+        if let session = store.session { attach(session) }
+        showTerminal()
+    }
+    @objc func newTab() { open(directory: store.session?.directory ?? FileManager.default.homeDirectoryForCurrentUser) }
+    @objc func selectNumberedTab(_ sender: NSMenuItem) {
+        guard store.sessions.indices.contains(sender.tag) else { return }
+        selectSession(id: store.sessions[sender.tag].id)
+    }
+    @objc func renameSelectedTab() {
+        if let id = store.selectedID { renameSession(id: id) }
+    }
+    func renameSession(id: UUID) {
+        guard let session = store.sessions.first(where: { $0.id == id }) else { return }
+        overlay?.setInteractionLock("rename", true)
+        defer { showTerminal(); overlay?.setInteractionLock("rename", false) }
+        let alert = NSAlert()
+        alert.messageText = "Rename tab"
+        alert.informativeText = "Leave blank to use the terminal title."
+        let field = NSTextField(string: session.customTitle ?? "")
+        field.placeholderString = session.displayTitle
+        field.frame = NSRect(x: 0, y: 0, width: 280, height: 24)
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        guard alert.runModal() == .alertFirstButtonReturn,
+              store.sessions.contains(where: { $0.id == id }) else { return }
+        session.customTitle = field.stringValue
+        updateStatus()
     }
 
     func open(directory: URL) {
@@ -270,21 +344,28 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window?.orderOut(nil)
     }
     @objc func closeSession() {
-        guard let session = store.session else { return }
+        if let id = store.selectedID { closeTab(id: id) }
+    }
+    func closeTab(id: UUID) {
+        guard let session = store.sessions.first(where: { $0.id == id }) else { return }
         overlay?.setInteractionLock("dialog", true)
         defer { overlay?.setInteractionLock("dialog", false) }
         if session.isRunning {
             let alert = NSAlert()
-            alert.messageText = "End this terminal session?"
-            alert.informativeText = "The shell and its running tools will end. Hide keeps them running."
+            alert.messageText = "End “\(session.displayTitle)”?"
+            alert.informativeText = "This tab’s shell and running tools will end. Other tabs keep running."
             alert.addButton(withTitle: "Keep Running")
             alert.addButton(withTitle: "End Session")
             guard alert.runModal() == .alertSecondButtonReturn else { return }
         }
         session.view.removeFromSuperview()
-        store.closeAfterConfirmation()
-        showEmptyState()
-        overlay?.sessionChanged()
+        store.closeAfterConfirmation(id: id)
+        if let selected = store.session { attach(selected) }
+        else {
+            attachedSession = nil
+            showEmptyState()
+            overlay?.sessionChanged()
+        }
     }
     @objc func showAccessSettings() {
         if shortcut == nil { shortcut = ShortcutController() }
@@ -298,22 +379,22 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func quitApp() { NSApp.terminate(nil) }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if quitting { return .terminateNow }
-        if store.session?.isRunning == true {
+        if store.sessions.contains(where: { $0.isRunning }) {
             overlay?.setInteractionLock("dialog", true)
             defer { overlay?.setInteractionLock("dialog", false) }
             let alert = NSAlert()
-            alert.messageText = "Quit and end the terminal session?"
+            alert.messageText = "Quit and end all terminal sessions?"
             alert.informativeText = "Sessions do not survive app exit. Hiding keeps your shell and tools running."
             alert.addButton(withTitle: "Keep App Running")
             alert.addButton(withTitle: "Hide Instead")
-            alert.addButton(withTitle: "Quit and End Session")
+            alert.addButton(withTitle: "Quit and End All Sessions")
             switch alert.runModal() {
             case .alertThirdButtonReturn: break
             case .alertSecondButtonReturn: hideTerminal(); return .terminateCancel
             default: return .terminateCancel
             }
         }
-        store.closeAfterConfirmation()
+        store.closeAllAfterConfirmation()
         shortcut?.shutdown()
         runtime?.shutdown()
         return .terminateNow

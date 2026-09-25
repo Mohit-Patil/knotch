@@ -143,6 +143,102 @@ enum HarnessQualification {
         exit(records.contains { $0["result"] == "FAILED" } ? 1 : 0)
     }
 
+    /// Keep the native tab fixture bounded and close only shells created by this test.
+    static func qualifyTabs(coordinator: AppCoordinator, runtime: GhosttyRuntime, first: GhosttySession, directory: URL) async throws {
+        var added: [GhosttySession] = []
+        defer {
+            for tab in added where tab.surface != nil {
+                tab.view.removeFromSuperview()
+                coordinator.store.closeAfterConfirmation(id: tab.id)
+            }
+            if first.surface != nil, coordinator.store.selectedID != first.id {
+                coordinator.selectSession(id: first.id)
+            }
+        }
+
+        let second = try GhosttySession(runtime: runtime, directory: directory, testCommand: "/bin/zsh -f")
+        added.append(second)
+        coordinator.store.adoptFixture(second)
+        let third = try GhosttySession(runtime: runtime, directory: directory, testCommand: "/bin/zsh -f")
+        added.append(third)
+        coordinator.store.adoptFixture(third)
+        try check("Tabs ordered store", coordinator.store.sessions.map(\.id) == [first.id, second.id, third.id] && coordinator.store.selectedID == third.id, "Three fixture sessions are ordered; adopting the last selected it")
+        for tab in [second, third] {
+            coordinator.selectSession(id: tab.id)
+            try await waitFor({
+                guard let surface = tab.surface else { return false }
+                return !screen(tab).isEmpty && ghostty_surface_foreground_pid(surface) > 0
+            }, description: "native shell in tab \(tab.id)")
+        }
+
+        let tabs = [first, second, third]
+        let surfaces = tabs.compactMap(\.surface)
+        let shellPIDs = surfaces.map(ghostty_surface_foreground_pid)
+        let ttyNames = surfaces.map { surface -> String in
+            let tty = ghostty_surface_tty_name(surface)
+            defer { ghostty_string_free(tty) }
+            return tty.ptr.map { String(cString: $0) } ?? ""
+        }
+        try check("Tabs independent PTYs", surfaces.count == 3 && Set(surfaces.map { UInt(bitPattern: $0) }).count == 3 && Set(shellPIDs).count == 3 && shellPIDs.allSatisfy { $0 > 0 } && Set(ttyNames).count == 3 && ttyNames.allSatisfy { $0.hasPrefix("/dev/ttys") }, "Native surfaces \(surfaces.map { UInt(bitPattern: $0) }); shell PIDs \(shellPIDs); PTYs \(ttyNames)")
+
+        coordinator.selectSession(id: second.id)
+        try await waitFor { coordinator.store.session?.id == second.id && second.view.superview === coordinator.container }
+        send("printf '\\033]2;TAB_OSC_SAFE\\a'\r", to: second)
+        try await waitFor { second.title.contains("TAB_OSC_SAFE") }
+        try check("Tab OSC title", second.displayTitle.contains("TAB_OSC_SAFE"), "Shell OSC 2 changed the selected tab title")
+        send("printf '\\033]2;TAB_BAD_\u{202E}RTL_\\a'\r", to: second)
+        try await waitFor { second.title.contains("TAB_BAD_") }
+        try check("Tab title sanitation", !second.title.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || $0.properties.isBidiControl }) && !second.displayTitle.unicodeScalars.contains(where: { $0.properties.isBidiControl }), "Untrusted OSC title omitted control and bidirectional formatting characters")
+        second.customTitle = "Pinned tab name"
+        send("printf '\\033]2;UPDATED_OSC_TITLE\\a'\r", to: second)
+        try await waitFor { second.title.contains("UPDATED_OSC_TITLE") }
+        try check("Custom tab rename", second.displayTitle == "Pinned tab name", "Custom name survived a later shell title change")
+        second.customTitle = nil
+        try check("Tab rename cleared", second.displayTitle.contains("UPDATED_OSC_TITLE"), "Clearing custom name exposes the latest shell title")
+        second.customTitle = " Unsafe\tName\u{202E}\n"
+        try check("Custom title sanitation", second.displayTitle == "Unsafe Name", "A custom rename removed control and bidirectional formatting characters")
+        second.customTitle = nil
+        let firstBeforeInput = screen(first)
+        let thirdBeforeInput = screen(third)
+        send("printf 'TAB_INPUT_ONLY:%s\\n' SECOND\r", to: second)
+        try await waitFor { screen(second).contains("\nTAB_INPUT_ONLY:SECOND") }
+        try check("Tab input isolation", coordinator.overlay?.panel.firstResponder === second.view && screen(first) == firstBeforeInput && screen(third) == thirdBeforeInput, "Selected tab owned the native responder and its input changed only its own surface")
+
+        send("printf '\\033[2J\\033[H'; for i in {1..100}; do printf 'TAB_SCROLL:%03d\\n' $i; done\r", to: second)
+        try await waitFor { screen(second).contains("TAB_SCROLL:100") }
+        let bottom = screen(second)
+        try check("Tab scrollback fixture", second.nativeView.binding("scroll_page_up"), "Ghostty accepted a native page-up scroll action")
+        try await waitFor { screen(second) != bottom && screen(second).contains("TAB_SCROLL:") }
+        let scrolled = screen(second)
+        coordinator.selectSession(id: third.id)
+        try await waitFor { coordinator.store.session?.id == third.id && third.view.superview === coordinator.container }
+        coordinator.selectSession(id: second.id)
+        try check("Tab retained scrollback", second.surface == surfaces[1] && screen(second) == scrolled, "Switching away and back retained the same surface and viewport scroll position")
+
+        coordinator.selectSession(id: first.id)
+        send("sleep 1; printf 'BACKGROUND_%s_DONE\\n' FIRST\r", to: first)
+        coordinator.selectSession(id: third.id)
+        send("sleep 1; printf 'BACKGROUND_%s_DONE\\n' THIRD\r", to: third)
+        coordinator.selectSession(id: second.id)
+        try await waitFor { screen(first).contains("\nBACKGROUND_FIRST_DONE") && screen(third).contains("\nBACKGROUND_THIRD_DONE") }
+        try check("Inactive tabs keep output", tabs.allSatisfy(\.isRunning) && zip(tabs, surfaces).allSatisfy { $0.0.surface == $0.1 } && zip(tabs, shellPIDs).allSatisfy { ghostty_surface_foreground_pid($0.0.surface!) == $0.1 }, "Two inactive shells completed work while a third tab was selected; all original shells and surfaces remained")
+
+        coordinator.selectSession(id: third.id)
+        coordinator.store.closeAfterConfirmation(id: second.id)
+        second.view.removeFromSuperview()
+        try check("Close background tab", coordinator.store.selectedID == third.id && coordinator.store.sessions.map(\.id) == [first.id, third.id] && second.surface == nil && third.surface == surfaces[2], "Closing tab two by ID preserved the selected third shell")
+        third.view.removeFromSuperview()
+        coordinator.store.closeAfterConfirmation(id: third.id)
+        try check("Close selected tab", coordinator.store.selectedID == first.id && coordinator.store.sessions.map(\.id) == [first.id], "Closing selected tab chose the remaining neighboring tab")
+        coordinator.selectSession(id: first.id)
+        try check("Selected neighbor presented", first.view.superview === coordinator.container && coordinator.store.session?.id == first.id && first.surface == surfaces[0], "Coordinator displayed the surviving shell without respawning it")
+        first.view.removeFromSuperview()
+        coordinator.store.closeAfterConfirmation(id: first.id)
+        coordinator.showEmptyState()
+        coordinator.overlay?.sessionChanged()
+        try check("Close last tab", coordinator.store.sessions.isEmpty && coordinator.store.selectedID == nil && coordinator.store.session == nil && first.surface == nil, "Last fixture close left an empty store and safe empty presentation")
+    }
+
     static func runOverlay(coordinator: AppCoordinator) async {
         records = []
         let output = ProcessInfo.processInfo.environment["KNOTCH_EVIDENCE"] ?? "/tmp/knotch-overlay-results.json"
@@ -278,6 +374,7 @@ enum HarnessQualification {
                 try check("Expanded screen-edge alignment", overlay.panel.frame.maxY == overlay.panel.screen!.frame.maxY && overlay.panel.frame.contains(notch) && overlay.panel.level == .statusBar, "Expanded native panel reaches the screen top and contains the measured camera cutout; header uses its side wings")
             }
             try check("Display placement", (overlay.layout?.usableFrame.contains(overlay.panel.frame) ?? false), "Actual panel frame \(overlay.panel.frame) is inside selected display placement bounds (including the notch header band)")
+            try await qualifyTabs(coordinator: coordinator, runtime: runtime, first: session, directory: folder)
             sink.orderOut(nil)
             session.view.removeFromSuperview()
             coordinator.store.closeAfterConfirmation()

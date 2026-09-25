@@ -8,10 +8,32 @@ final class GhosttySession: TerminalSession {
     let nativeView = GhosttyNativeView(frame: NSRect(x: 0, y: 0, width: 960, height: 480))
     var view: NSView { nativeView }
     private(set) var surface: ghostty_surface_t?
+    private(set) var title = ""
+    private var tabTitle: String?
+    private var userTitle: String?
+    var customTitle: String? {
+        get { userTitle }
+        set {
+            let value = newValue.map(Self.sanitizeTitle).flatMap { $0.isEmpty ? nil : $0 }
+            guard value != userTitle else { return }
+            userTitle = value
+            onStatusChange?()
+        }
+    }
+    var displayTitle: String {
+        if let customTitle { return customTitle }
+        if let tabTitle { return tabTitle }
+        if !title.isEmpty { return title }
+        let fallback = directory.standardizedFileURL == FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
+            ? "Home" : directory.lastPathComponent
+        let safeTitle = Self.sanitizeTitle(fallback)
+        return safeTitle.isEmpty ? "Terminal" : safeTitle
+    }
     private(set) var status = "Session starting"
     private(set) var isRunning = false
     var onStatusChange: (() -> Void)?
     var onCloseRequested: (() -> Void)?
+    var onNewTabRequested: (() -> Void)?
     var onActivate: (() -> Void)? { didSet { nativeView.onActivate = onActivate } }
     var onInput: (() -> Void)? { didSet { nativeView.onInput = onInput } }
     var onInteractionLock: ((Bool) -> Void)? {
@@ -26,11 +48,48 @@ final class GhosttySession: TerminalSession {
     }
     private let runtime: GhosttyRuntime
     private var closeRequestQueued = false
+    private var newTabRequestQueued = false
     private struct PendingPaste { let state: UnsafeMutableRawPointer? }
     private var pendingPastes: [UUID: PendingPaste] = [:]
     private var pendingClipboardWrites: Set<UUID> = []
     private var viewInteractionLocked = false
     private var presented = true
+
+    /// Keep untrusted OSC titles single-line, visually unambiguous, and small in chrome.
+    private static func sanitizeTitle(_ value: String) -> String {
+        var cleaned = String.UnicodeScalarView()
+        var previousWasSpace = false
+        for scalar in value.unicodeScalars.prefix(4096) {
+            if CharacterSet.whitespacesAndNewlines.contains(scalar) {
+                if !previousWasSpace && !cleaned.isEmpty { cleaned.append(" ") }
+                previousWasSpace = true
+                continue
+            }
+            let category = scalar.properties.generalCategory
+            if category == .control || category == .format || category == .lineSeparator || category == .paragraphSeparator {
+                continue
+            }
+            cleaned.append(scalar)
+            previousWasSpace = false
+        }
+        return String(String(cleaned).prefix(80)).trimmingCharacters(in: .whitespaces)
+    }
+
+    private func setEngineTitle(_ pointer: UnsafePointer<CChar>?, forTab: Bool) {
+        guard let pointer else { return }
+        // The pinned engine currently caps its title, but bound the C-string read too.
+        let length = strnlen(pointer, 4096)
+        let value = Self.sanitizeTitle(String(decoding: UnsafeRawBufferPointer(start: pointer, count: length), as: UTF8.self))
+        if forTab {
+            let next = value.isEmpty ? nil : value
+            guard tabTitle != next else { return }
+            tabTitle = next
+        } else {
+            guard title != value else { return }
+            title = value
+        }
+        onStatusChange?()
+    }
 
     private func publishInteractionLock() {
         onInteractionLock?(viewInteractionLocked || !pendingPastes.isEmpty || !pendingClipboardWrites.isEmpty)
@@ -192,6 +251,17 @@ final class GhosttySession: TerminalSession {
             self.onCloseRequested?()
         }
     }
+    func requestNewTabFromEngine() {
+        guard !newTabRequestQueued else { return }
+        newTabRequestQueued = true
+        let expected = surface
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.newTabRequestQueued = false
+            guard self.surface != nil, self.surface == expected else { return }
+            self.onNewTabRequested?()
+        }
+    }
     func handle(_ action: ghostty_action_s) -> Bool {
         switch action.tag {
         case GHOSTTY_ACTION_SHOW_CHILD_EXITED:
@@ -199,6 +269,15 @@ final class GhosttySession: TerminalSession {
             return true
         case GHOSTTY_ACTION_CLOSE_WINDOW, GHOSTTY_ACTION_CLOSE_TAB:
             requestCloseFromEngine()
+            return true
+        case GHOSTTY_ACTION_NEW_TAB:
+            requestNewTabFromEngine()
+            return true
+        case GHOSTTY_ACTION_SET_TITLE:
+            setEngineTitle(action.action.set_title.title, forTab: false)
+            return true
+        case GHOSTTY_ACTION_SET_TAB_TITLE:
+            setEngineTitle(action.action.set_tab_title.title, forTab: true)
             return true
         case GHOSTTY_ACTION_OPEN_URL:
             // Only honor an intentional terminal click while this surface owns focus.
@@ -208,14 +287,14 @@ final class GhosttySession: TerminalSession {
             guard let url = URL(string: value), ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return false }
             NSWorkspace.shared.open(url)
             return true
-        case GHOSTTY_ACTION_SET_TITLE, GHOSTTY_ACTION_SET_TAB_TITLE, GHOSTTY_ACTION_PWD,
+        case GHOSTTY_ACTION_PWD,
              GHOSTTY_ACTION_CELL_SIZE, GHOSTTY_ACTION_INITIAL_SIZE, GHOSTTY_ACTION_SIZE_LIMIT,
              GHOSTTY_ACTION_COLOR_CHANGE, GHOSTTY_ACTION_CONFIG_CHANGE,
              GHOSTTY_ACTION_SCROLLBAR, GHOSTTY_ACTION_SELECTION_CHANGED:
-            // Metadata intentionally not lifted into alpha chrome.
+            // This metadata is not displayed in chrome.
             return true
         default:
-            // Notifications never activate; tabs/splits/export/inspector aren't in this alpha.
+            // Unsupported actions never activate; splits/export/inspector aren't in this alpha.
             return false
         }
     }
