@@ -31,7 +31,7 @@ The numeric exit-status limitation is upstream and remains: controlled `exit 7` 
 | ENG-03 | PASSED | Real zsh PTY, working directory containing spaces/Japanese, and foreground PID checked by live engine API and child output. |
 | ENG-04 | NOT_RUN | Ordinary typing, Return, arrows, dead key, Command-C/V and raw Escape tested. Complete Tab/Backspace/Home/End/modifier matrix remains. |
 | ENG-05 | PASSED | Real bounded alternate-screen raw-input fixture entered, read q, and restored previous screen. |
-| ENG-06 | NOT_RUN | Harness resize changed engine grid 28x110 to 21x86 and child stty matched after asynchronous resize. Repeated panel resize under TUI load is not qualified; alpha uses fixed expanded bounds. |
+| ENG-06 | NOT_RUN | Harness resize changed engine grid 28x110 to 21x86 and child stty matched after asynchronous resize. Settings-driven panel resize now also changes a real Ghostty grid without replacing its shell. Repeated panel resize under TUI load is not qualified. |
 | ENG-07 | PASSED | Bounded 65-tick child continued output while hidden for 60 seconds; same surface and shell PID after reveal. |
 | ENG-08 | NOT_RUN | Tab follow-up: three independent PTYs passed selected-input isolation and retained scrollback/output. Copy works in the engine harness; selected-copy isolation across multiple tabs remains unqualified. |
 | ENG-09 | NOT_RUN | Tab follow-up: closing background, selected and last fixture sessions preserved other owned shells; installed UI confirmed a named background-tab close while another tab stayed selected. A separate unrelated-terminal comparison remains unqualified. |
@@ -55,7 +55,7 @@ The numeric exit-status limitation is upstream and remains: controlled `exit 7` 
 | UX-10 | NOT_RUN | Pin UI is a later MVP feature; reducer branch only tested. |
 | UX-11 | NOT_RUN | Manual Hide and handle reopen preserved accessory-mode shell PID 87889. Cross-app shortcut activation and focus restoration remain. |
 | UX-12 | NOT_RUN | Stale timer cancellation covered by deterministic reducer; actual three-app focus-return scenario remains. |
-| UX-13 | NOT_RUN | Fixed-size alpha; no interactive resize/composition qualification. |
+| UX-13 | NOT_RUN | Lower edge/corner drag handles and Settings sliders are implemented. Slider-driven live resizing was inspected; physical pointer-drag behavior and composition timing remain unqualified. |
 | UX-14 | NOT_RUN | Controller disabled-hover test PASSED; menu, handle, shortcut registration exist. Full shortcut-only physical workflow remains. |
 
 ## Display and OS integration
@@ -152,3 +152,7 @@ The six-check [focused fixture](settings-display-dialog.json) now verifies that 
 ## Compact empty-state follow-up
 
 The owner screenshot showed an oversized empty panel and low-contrast inactive Open Project action. The [eight-check native report](compact-empty-settings.json) covers 600×240 empty, 640×320 Settings, full-size terminal, external-display attachment, dialog levels and retained Ghostty shell identity. Model tests cover exact external frames. Release/test builds and installed signature/hash verification passed. Manual inspection of the restarted installed app confirmed the compact empty and Settings layouts. The inactive hover-preview color itself and resizing animation timing were not independently measured.
+
+## Terminal panel resizing follow-up
+
+The [ten-check focused native report](resizable-panel.json) includes a real Ghostty grid resize without replacing the shell or surface, reset to the selected display's adaptive size, compact Settings, and retained session identity. Model tests cover bottom-only height changes, symmetric lower-corner changes, and screen bounds. Release/test builds and signature verification passed. In an isolated signed app, Settings sliders changed a running terminal to about 1833×473 points, those dimensions appeared after quit/relaunch, and Reset restored 1280×720. The lower-edge and lower-corner *physical drag* remains NOT_RUN: computer-control dragging did not move a standard macOS slider either. The newly installed canonical bundle matches Release by executable hash, but its existing process has a live shell and was not restarted during qualification.

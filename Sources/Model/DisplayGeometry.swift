@@ -12,6 +12,7 @@ struct DisplayGeometry {
 
     var preferredPanelSize = CGSize(width: 960, height: 520)
     var compactPanelSize: CGSize?
+    var userPanelSize: CGSize?
     var triggerSize = CGSize(width: 160, height: 28)
     var panelGap: CGFloat = 0
 
@@ -69,9 +70,9 @@ struct DisplayGeometry {
         let availablePanelHeight = max(0, top - usable.minY)
         // Keep the familiar size on laptop displays; offer more terminal cells
         // on large external monitors without filling the whole desktop.
-        let desiredWidth = compactPanelSize?.width
+        let desiredWidth = compactPanelSize?.width ?? userPanelSize?.width
             ?? min(1280, max(preferredPanelSize.width, usable.width * 0.45))
-        let desiredHeight = compactPanelSize?.height
+        let desiredHeight = compactPanelSize?.height ?? userPanelSize?.height
             ?? min(720, max(preferredPanelSize.height, availablePanelHeight * 0.36))
         let panelWidth = min(max(1, desiredWidth), max(1, usable.width))
         let panelHeight = min(max(1, desiredHeight),
@@ -117,5 +118,26 @@ struct OverlayLayout {
     func backingPixels(for size: CGSize) -> CGSize {
         CGSize(width: (size.width * backingScale).rounded(),
                height: (size.height * backingScale).rounded())
+    }
+}
+
+/// The top stays attached to the display. Only the lower edge and its two
+/// corners are drag targets; horizontal dragging from the bottom edge is inert.
+enum PanelResizeHandle {
+    case bottom
+    case lowerLeft
+    case lowerRight
+
+    func size(from initial: CGSize, movement: CGPoint, usable: CGSize) -> CGSize {
+        let horizontal: CGFloat
+        switch self {
+        case .bottom: horizontal = 0
+        case .lowerLeft: horizontal = -2 * movement.x
+        case .lowerRight: horizontal = 2 * movement.x
+        }
+        let minimumWidth = min(520, usable.width)
+        let minimumHeight = min(280, usable.height)
+        return CGSize(width: min(usable.width, max(minimumWidth, initial.width + horizontal)),
+                      height: min(usable.height, max(minimumHeight, initial.height - movement.y)))
     }
 }

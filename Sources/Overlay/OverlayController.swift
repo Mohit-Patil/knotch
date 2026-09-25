@@ -27,6 +27,33 @@ private final class OverlayTrackingView: NSView {
     }
 }
 
+@MainActor
+private final class OverlayResizeHandleView: NSView {
+    let handle: PanelResizeHandle
+    var onStart: ((PanelResizeHandle, NSPoint) -> Void)?
+    var onDrag: ((NSPoint) -> Void)?
+    var onEnd: (() -> Void)?
+
+    init(handle: PanelResizeHandle, frame: NSRect) {
+        self.handle = handle
+        super.init(frame: frame)
+        setAccessibilityElement(false)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
+
+    override func mouseDown(with event: NSEvent) { onStart?(handle, NSEvent.mouseLocation) }
+    override func mouseDragged(with event: NSEvent) { onDrag?(NSEvent.mouseLocation) }
+    override func mouseUp(with event: NSEvent) { onEnd?() }
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        let cursor: NSCursor = switch handle {
+        case .bottom: .resizeUpDown
+        case .lowerLeft, .lowerRight: .crosshair
+        }
+        addCursorRect(bounds, cursor: cursor)
+    }
+}
+
 /// A nonactivating preview that can still become key after deliberate input.
 @MainActor
 private final class OverlayNativePanel: NSPanel {
@@ -60,6 +87,9 @@ final class OverlayController: NSObject, NSWindowDelegate {
     var triggerFrame: NSRect { triggerPanel.frame }
     private let content: NSView
     private var compactPanelSize: CGSize?
+    private var userPanelSize: CGSize?
+    private var resizeHandles: [OverlayResizeHandleView] = []
+    private var resizeGesture: (handle: PanelResizeHandle, origin: NSPoint, size: CGSize)?
     private let sessionProvider: () -> (any TerminalSession)?
     private weak var presentedSession: (any TerminalSession)?
     private var hoverTimer: Timer?
@@ -76,6 +106,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
 
     private(set) var state = OverlayState()
     var onPresentationChange: ((OverlayPresentation) -> Void)?
+    var onTerminalPanelSizeCommit: ((CGSize) -> Void)?
     #if HARNESS_TESTS
     // Controller fixtures supply a complete pointer trace; do not mix in the
     // owner's real pointer when a test window happens to appear underneath it.
@@ -90,10 +121,11 @@ final class OverlayController: NSObject, NSWindowDelegate {
         return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
-    init(content: NSView, compactPanelSize: CGSize? = nil,
+    init(content: NSView, compactPanelSize: CGSize? = nil, userPanelSize: CGSize? = nil,
          sessionProvider: @escaping () -> (any TerminalSession)?) {
         self.content = content
         self.compactPanelSize = compactPanelSize
+        self.userPanelSize = userPanelSize
         self.sessionProvider = sessionProvider
         triggerPanel = OverlayNativePanel(contentRect: NSRect(x: 0, y: 0, width: 160, height: 28),
                                           styleMask: [.borderless, .nonactivatingPanel],
@@ -181,6 +213,26 @@ final class OverlayController: NSObject, NSWindowDelegate {
         placeOnSelectedScreen()
     }
 
+    func setUserPanelSize(_ size: CGSize?) {
+        guard userPanelSize != size else { return }
+        userPanelSize = size
+        placeOnSelectedScreen()
+    }
+
+    func terminalSizeOptions() -> (current: CGSize, defaultSize: CGSize, maximum: CGSize)? {
+        guard let screen = selectedScreen() else { return nil }
+        var geometry = DisplayGeometry(screenFrame: screen.frame,
+                                       visibleFrame: screen.visibleFrame,
+                                       safeAreaTop: screen.safeAreaInsets.top,
+                                       auxiliaryTopLeft: screen.auxiliaryTopLeftArea,
+                                       auxiliaryTopRight: screen.auxiliaryTopRightArea,
+                                       backingScale: screen.backingScaleFactor)
+        let defaultLayout = geometry.layout()
+        geometry.userPanelSize = userPanelSize
+        let result = geometry.layout()
+        return (result.panelFrame.size, defaultLayout.panelFrame.size, result.usableFrame.size)
+    }
+
     /// System pickers and alerts must be above the overlay. Restore the
     /// screen-edge level after their modal loop finishes, including cancel.
     func setSystemDialogPresented(_ presented: Bool) {
@@ -208,10 +260,15 @@ final class OverlayController: NSObject, NSWindowDelegate {
         } else {
             next?.setFocused(false)
         }
+        updateResizeHandles()
     }
 
     /// Native tests and owner UI may deliver explicit reducer events here.
     func send(_ event: OverlayEvent) {
+        switch event {
+        case .hide, .screenLocked, .focusLost: endResize()
+        default: break
+        }
         let previousImmediate = immediatePresentation
         if case .screenLocked = event { immediatePresentation = true }
         defer { immediatePresentation = previousImmediate }
@@ -342,7 +399,50 @@ final class OverlayController: NSObject, NSWindowDelegate {
         content.autoresizingMask = []
         panelRoot.addSubview(content)
 
+        for (handle, frame, mask) in [
+            (PanelResizeHandle.bottom, NSRect(x: 20, y: 0, width: 920, height: 8), NSView.AutoresizingMask.width),
+            (.lowerLeft, NSRect(x: 0, y: 0, width: 20, height: 20), []),
+            (.lowerRight, NSRect(x: 940, y: 0, width: 20, height: 20), .minXMargin)
+        ] {
+            let view = OverlayResizeHandleView(handle: handle, frame: frame)
+            view.autoresizingMask = mask
+            view.onStart = { [weak self] handle, point in self?.beginResize(handle, at: point) }
+            view.onDrag = { [weak self] point in self?.continueResize(at: point) }
+            view.onEnd = { [weak self] in self?.endResize() }
+            view.isHidden = true
+            panelRoot.addSubview(view)
+            resizeHandles.append(view)
+        }
 
+
+    }
+
+    private func updateResizeHandles() {
+        let enabled = sessionProvider() != nil && state.presentation != .collapsed
+        resizeHandles.forEach { $0.isHidden = !enabled }
+    }
+
+    private func beginResize(_ handle: PanelResizeHandle, at point: NSPoint) {
+        guard state.presentation != .collapsed, sessionProvider() != nil, let layout else { return }
+        motion.cancel(at: 1)
+        resizeGesture = (handle, point, layout.panelFrame.size)
+        setInteractionLock("resize", true)
+    }
+
+    private func continueResize(at point: NSPoint) {
+        guard let resizeGesture, let layout else { return }
+        let movement = CGPoint(x: point.x - resizeGesture.origin.x,
+                               y: point.y - resizeGesture.origin.y)
+        let size = resizeGesture.handle.size(from: resizeGesture.size, movement: movement,
+                                             usable: layout.usableFrame.size)
+        setUserPanelSize(size)
+    }
+
+    private func endResize() {
+        guard resizeGesture != nil else { return }
+        resizeGesture = nil
+        if let userPanelSize { onTerminalPanelSizeCommit?(userPanelSize) }
+        setInteractionLock("resize", false)
     }
 
     private func apply(_ effects: [OverlayEffect]) {
@@ -436,6 +536,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
             animatePresentation(expanded: true)
             triggerPanel.orderFront(nil)
         }
+        updateResizeHandles()
     }
 
     private func animatePresentation(expanded: Bool) {
@@ -507,6 +608,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
                                        backingScale: screen.backingScaleFactor)
         geometry.panelGap = 0
         geometry.compactPanelSize = compactPanelSize
+        geometry.userPanelSize = userPanelSize
         let layout = geometry.layout()
         if let old = self.layout, old.panelFrame == layout.panelFrame,
            old.triggerFrame == layout.triggerFrame, old.backingScale == layout.backingScale { return }

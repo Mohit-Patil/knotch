@@ -283,11 +283,24 @@ enum HarnessQualification {
                       "Closing or cancelling a native picker restores the edge overlay level")
             let surface = session.surface!
             let pid = ghostty_surface_foreground_pid(surface)
+            let originalGrid = ghostty_surface_size(surface)
+            overlay.setUserPanelSize(CGSize(width: 1000, height: 600))
+            try await waitFor({ ghostty_surface_size(surface).columns != originalGrid.columns },
+                              description: "terminal grid after panel resize")
+            try check("Live terminal resize",
+                      overlay.layout?.panelFrame.size == CGSize(width: 1000, height: 600)
+                        && session.surface == surface
+                        && ghostty_surface_foreground_pid(surface) == pid,
+                      "Changing panel size resized the real Ghostty grid without replacing the shell")
+            overlay.setUserPanelSize(nil)
+            try check("Reset terminal size",
+                      overlay.layout?.panelFrame.size != CGSize(width: 1000, height: 600),
+                      "Reset returns to the current display's adaptive terminal dimensions")
             let beforeWindows = Set(NSApp.windows.map(\.windowNumber))
             send("sleep 1; printf 'SETTINGS_BACKGROUND_DONE\\n'\r", to: session)
             coordinator.showAccessSettings()
             try check("Compact Settings panel",
-                      overlay.layout?.panelFrame.size == CGSize(width: 640, height: 320),
+                      overlay.layout?.panelFrame.size == CGSize(width: 720, height: 480),
                       "In-panel preferences use a fitted surface rather than the terminal grid size")
             try check("Settings tab owns content", coordinator.statusLabel.stringValue == "Settings" && coordinator.store.session?.id == session.id && session.view.superview == nil && session.surface == surface && Set(NSApp.windows.map(\.windowNumber)) == beforeWindows, "Settings replaced the terminal in the same native panel without creating another window or freeing the shell")
             try await waitFor({ screen(session).contains("\nSETTINGS_BACKGROUND_DONE") }, description: "output while Settings is selected")

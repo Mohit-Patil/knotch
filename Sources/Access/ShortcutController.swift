@@ -62,9 +62,16 @@ final class ShortcutController: NSObject {
     }
 
     func makeSettingsView(hoverEnabled: Bool, setHover: @escaping (Bool) -> Void,
-                          onRecordingChange: @escaping (Bool) -> Void) -> NSView {
+                          onRecordingChange: @escaping (Bool) -> Void,
+                          panelSize: CGSize, defaultPanelSize: CGSize, maximumPanelSize: CGSize,
+                          panelSizeIsCustom: Bool,
+                          setPanelSize: @escaping (CGSize?) -> Void) -> NSView {
         NSHostingView(rootView: AccessSettings(controller: self, initialHover: hoverEnabled,
-                                               setHover: setHover, onRecordingChange: onRecordingChange))
+                                               setHover: setHover, onRecordingChange: onRecordingChange,
+                                               panelSize: panelSize, defaultPanelSize: defaultPanelSize,
+                                               maximumPanelSize: maximumPanelSize,
+                                               panelSizeIsCustom: panelSizeIsCustom,
+                                               setPanelSize: setPanelSize))
     }
 
     func shutdown() {
@@ -79,20 +86,48 @@ private struct AccessSettings: View {
     let controller: ShortcutController
     let setHover: (Bool) -> Void
     let onRecordingChange: (Bool) -> Void
+    let defaultPanelSize: CGSize
+    let maximumPanelSize: CGSize
+    let setPanelSize: (CGSize?) -> Void
     @State private var hover: Bool
     @State private var candidate: TerminalShortcut
     @State private var message = "Record a shortcut, then choose Enable."
+    @State private var panelWidth: Double
+    @State private var panelHeight: Double
+    @State private var panelSizeIsCustom: Bool
 
     init(controller: ShortcutController, initialHover: Bool, setHover: @escaping (Bool) -> Void,
-         onRecordingChange: @escaping (Bool) -> Void) {
+         onRecordingChange: @escaping (Bool) -> Void,
+         panelSize: CGSize, defaultPanelSize: CGSize, maximumPanelSize: CGSize,
+         panelSizeIsCustom: Bool, setPanelSize: @escaping (CGSize?) -> Void) {
         self.controller = controller
         self.setHover = setHover
         self.onRecordingChange = onRecordingChange
+        self.defaultPanelSize = defaultPanelSize
+        self.maximumPanelSize = maximumPanelSize
+        self.setPanelSize = setPanelSize
         _hover = State(initialValue: initialHover)
         _candidate = State(initialValue: controller.current ?? .suggested)
+        _panelWidth = State(initialValue: Double(panelSize.width))
+        _panelHeight = State(initialValue: Double(panelSize.height))
+        _panelSizeIsCustom = State(initialValue: panelSizeIsCustom)
+    }
+    private var widthSelection: Binding<Double> {
+        Binding(get: { panelWidth }, set: { value in
+            panelWidth = value
+            panelSizeIsCustom = true
+            setPanelSize(CGSize(width: value, height: panelHeight))
+        })
+    }
+    private var heightSelection: Binding<Double> {
+        Binding(get: { panelHeight }, set: { value in
+            panelHeight = value
+            panelSizeIsCustom = true
+            setPanelSize(CGSize(width: panelWidth, height: value))
+        })
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: 18) {
             HStack {
                 Image(systemName: "hand.point.up.left")
                     .foregroundStyle(.secondary)
@@ -116,6 +151,33 @@ private struct AccessSettings: View {
                 }
                 Text(message).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Terminal panel size").font(.headline)
+                HStack {
+                    Text("Width").frame(width: 48, alignment: .leading)
+                    Slider(value: widthSelection,
+                           in: min(520, Double(maximumPanelSize.width))...Double(maximumPanelSize.width))
+                    Text("\(Int(panelWidth)) pt").monospacedDigit().frame(width: 68, alignment: .trailing)
+                }
+                HStack {
+                    Text("Height").frame(width: 48, alignment: .leading)
+                    Slider(value: heightSelection,
+                           in: min(280, Double(maximumPanelSize.height))...Double(maximumPanelSize.height))
+                    Text("\(Int(panelHeight)) pt").monospacedDigit().frame(width: 68, alignment: .trailing)
+                }
+                HStack {
+                    Button("Reset to display default") {
+                        panelWidth = Double(defaultPanelSize.width)
+                        panelHeight = Double(defaultPanelSize.height)
+                        panelSizeIsCustom = false
+                        setPanelSize(nil)
+                    }.disabled(!panelSizeIsCustom)
+                    Spacer()
+                    Text("Drag the bottom edge or lower corners")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Spacer(minLength: 0)
         }

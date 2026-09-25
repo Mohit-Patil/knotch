@@ -17,6 +17,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let settingsID = UUID()
     private var settingsSelected = false
     private var settingsView: NSView?
+    private var savedTerminalPanelSize: CGSize?
+    private var runningQualification = false
     private var tabHeight: NSLayoutConstraint?
     private weak var attachedSession: (any TerminalSession)?
     var quitting = false
@@ -27,6 +29,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         #if HARNESS_TESTS
         qualification = CommandLine.arguments.contains("--overlay-self-test") || CommandLine.arguments.contains("--settings-self-test")
         #endif
+        runningQualification = qualification || harness
+        if !runningQualification { savedTerminalPanelSize = Self.loadTerminalPanelSize() }
         // The focus fixture also owns an ordinary editor window; production remains accessory.
         NSApp.setActivationPolicy(harness || qualification ? .regular : .accessory)
         makeMenu()
@@ -54,6 +58,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         } else {
             let controller = OverlayController(content: makeContent(),
                                                compactPanelSize: CGSize(width: 600, height: 240),
+                                               userPanelSize: savedTerminalPanelSize,
                                                sessionProvider: { [weak self] in
                 guard let self, !self.settingsSelected else { return nil }
                 return self.store.session
@@ -61,6 +66,9 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             overlay = controller
             window = controller.panel
             controller.onPresentationChange = { [weak self] _ in self?.updateStatus() }
+            controller.onTerminalPanelSizeCommit = { [weak self] size in
+                self?.setTerminalPanelSize(size)
+            }
             let shortcut = ShortcutController()
             self.shortcut = shortcut
             shortcut.onToggle = { [weak self] in
@@ -93,6 +101,25 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             open(directory: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true))
         }
         if harness { window?.makeKeyAndOrderFront(nil); NSApp.activate() }
+    }
+
+    private static func loadTerminalPanelSize() -> CGSize? {
+        guard let values = UserDefaults.standard.array(forKey: "panel.terminal-size.v1") as? [Double],
+              values.count == 2, values.allSatisfy({ $0.isFinite }),
+              (200...10_000).contains(values[0]), (120...10_000).contains(values[1]) else { return nil }
+        return CGSize(width: values[0], height: values[1])
+    }
+
+    private func setTerminalPanelSize(_ size: CGSize?) {
+        savedTerminalPanelSize = size
+        overlay?.setUserPanelSize(size)
+        guard !runningQualification else { return }
+        if let size {
+            UserDefaults.standard.set([Double(size.width), Double(size.height)],
+                                      forKey: "panel.terminal-size.v1")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "panel.terminal-size.v1")
+        }
     }
 
     func makeMenu() {
@@ -274,6 +301,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if settingsSelected { overlay?.setInteractionLock("settings-recording", false) }
         settingsSelected = false
         settingsView?.removeFromSuperview()
+        settingsView = nil
         if attachedSession !== session {
             attachedSession?.setFocused(false)
             attachedSession?.setPresented(false)
@@ -421,6 +449,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if shortcut == nil { shortcut = ShortcutController() }
         guard let shortcut else { return }
         if settingsView == nil {
+            let sizing = overlay?.terminalSizeOptions()
             settingsView = shortcut.makeSettingsView(
                 hoverEnabled: overlay?.state.hoverEnabled ?? true,
                 setHover: { [weak self] value in
@@ -429,7 +458,12 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 },
                 onRecordingChange: { [weak self] recording in
                     self?.overlay?.setInteractionLock("settings-recording", recording)
-                })
+                },
+                panelSize: sizing?.current ?? CGSize(width: 960, height: 520),
+                defaultPanelSize: sizing?.defaultSize ?? CGSize(width: 960, height: 520),
+                maximumPanelSize: sizing?.maximum ?? CGSize(width: 1920, height: 1080),
+                panelSizeIsCustom: savedTerminalPanelSize != nil,
+                setPanelSize: { [weak self] size in self?.setTerminalPanelSize(size) })
         }
         guard let settingsView else { return }
         if !settingsSelected {
@@ -442,7 +476,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             emptyView?.removeFromSuperview()
             emptyView = nil
             settingsSelected = true
-            overlay?.setCompactPanelSize(CGSize(width: 640, height: 320))
+            overlay?.setCompactPanelSize(CGSize(width: 720, height: 480))
             settingsView.frame = container.bounds
             settingsView.autoresizingMask = [.width, .height]
             container.addSubview(settingsView)

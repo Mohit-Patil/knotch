@@ -293,6 +293,10 @@ struct ModelTests {
         expect(settingsExternal.panelFrame == CGRect(x: 1600, y: 1840, width: 640, height: 320),
                "settings tab gets a compact panel that fits its controls")
         geometry.compactPanelSize = nil
+        geometry.userPanelSize = CGSize(width: 1100, height: 610)
+        expect(geometry.layout().panelFrame == CGRect(x: 1370, y: 1550, width: 1100, height: 610),
+               "saved terminal size overrides the adaptive display default")
+        geometry.userPanelSize = nil
 
         geometry.screenFrame = screen
         geometry.visibleFrame = visible
@@ -316,6 +320,21 @@ struct ModelTests {
         expect(tiny.panelFrame.width > 0 && tiny.panelFrame.height > 0, "tiny panel remains positive")
         expect(geometry.visibleFrame.contains(tiny.triggerFrame)
                && geometry.visibleFrame.contains(tiny.panelFrame), "tiny frames remain visible")
+
+        let start = CGSize(width: 800, height: 500)
+        let usable = CGSize(width: 1200, height: 900)
+        expect(PanelResizeHandle.bottom.size(from: start,
+                                             movement: CGPoint(x: 200, y: -70), usable: usable)
+               == CGSize(width: 800, height: 570), "bottom edge only changes height")
+        expect(PanelResizeHandle.lowerRight.size(from: start,
+                                                 movement: CGPoint(x: 50, y: -40), usable: usable)
+               == CGSize(width: 900, height: 540), "lower-right corner changes width and height")
+        expect(PanelResizeHandle.lowerLeft.size(from: start,
+                                                movement: CGPoint(x: -60, y: 30), usable: usable)
+               == CGSize(width: 920, height: 470), "lower-left corner changes width and height")
+        expect(PanelResizeHandle.lowerRight.size(from: start,
+                                                 movement: CGPoint(x: 500, y: -900), usable: usable)
+               == usable, "drag clamps to the selected screen")
     }
 
     static func testRandomizedTransitions() {
