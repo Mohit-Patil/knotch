@@ -59,6 +59,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
     private(set) var layout: OverlayLayout?
     var triggerFrame: NSRect { triggerPanel.frame }
     private let content: NSView
+    private var compactPanelSize: CGSize?
     private let sessionProvider: () -> (any TerminalSession)?
     private weak var presentedSession: (any TerminalSession)?
     private var hoverTimer: Timer?
@@ -89,8 +90,10 @@ final class OverlayController: NSObject, NSWindowDelegate {
         return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
-    init(content: NSView, sessionProvider: @escaping () -> (any TerminalSession)?) {
+    init(content: NSView, compactPanelSize: CGSize? = nil,
+         sessionProvider: @escaping () -> (any TerminalSession)?) {
         self.content = content
+        self.compactPanelSize = compactPanelSize
         self.sessionProvider = sessionProvider
         triggerPanel = OverlayNativePanel(contentRect: NSRect(x: 0, y: 0, width: 160, height: 28),
                                           styleMask: [.borderless, .nonactivatingPanel],
@@ -171,6 +174,12 @@ final class OverlayController: NSObject, NSWindowDelegate {
     }
 
     func setHoverEnabled(_ enabled: Bool) { send(.hoverEnabledChanged(enabled)) }
+
+    func setCompactPanelSize(_ size: CGSize?) {
+        guard compactPanelSize != size else { return }
+        compactPanelSize = size
+        placeOnSelectedScreen()
+    }
 
     /// System pickers and alerts must be above the overlay. Restore the
     /// screen-edge level after their modal loop finishes, including cancel.
@@ -497,6 +506,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
                                        auxiliaryTopRight: screen.auxiliaryTopRightArea,
                                        backingScale: screen.backingScaleFactor)
         geometry.panelGap = 0
+        geometry.compactPanelSize = compactPanelSize
         let layout = geometry.layout()
         if let old = self.layout, old.panelFrame == layout.panelFrame,
            old.triggerFrame == layout.triggerFrame, old.backingScale == layout.backingScale { return }

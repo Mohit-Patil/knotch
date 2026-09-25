@@ -148,3 +148,7 @@ The owner-requested Settings tab and plain-display placement update passed `scri
 ## System dialog layering follow-up
 
 The six-check [focused fixture](settings-display-dialog.json) now verifies that app-owned modal dialogs lower the status-bar-level panel to normal level and restore it afterward, plus the earlier display and session checks. The project picker, rename, close, quit and error paths use that helper; tab context menus use the same level change. In the restarted installed app, computer control showed the actual Open Project picker and a close-session alert above Knotch, and picker cancellation returned to the panel. The disposable shell used for the alert was closed; the app was left collapsed and empty. The attempted direct-executable automated modal fixture hung before dismissing its dialog and was removed. The owner screenshot establishes the pre-fix failure only.
+
+## Compact empty-state follow-up
+
+The owner screenshot showed an oversized empty panel and low-contrast inactive Open Project action. The [eight-check native report](compact-empty-settings.json) covers 600×240 empty, 640×320 Settings, full-size terminal, external-display attachment, dialog levels and retained Ghostty shell identity. Model tests cover exact external frames. Release/test builds and installed signature/hash verification passed. Manual inspection of the restarted installed app confirmed the compact empty and Settings layouts. The inactive hover-preview color itself and resizing animation timing were not independently measured.

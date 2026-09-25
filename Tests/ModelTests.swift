@@ -284,6 +284,15 @@ struct ModelTests {
         expect(external.triggerFrame == CGRect(x: 1840, y: 2132, width: 160, height: 28)
                && external.panelFrame == CGRect(x: 1280, y: 1440, width: 1280, height: 720),
                "3840x2160 external display uses menu-bar handle and larger fitted terminal")
+        geometry.compactPanelSize = CGSize(width: 600, height: 240)
+        let emptyExternal = geometry.layout()
+        expect(emptyExternal.panelFrame == CGRect(x: 1620, y: 1920, width: 600, height: 240),
+               "empty state occupies a compact screen-edge panel")
+        geometry.compactPanelSize = CGSize(width: 640, height: 320)
+        let settingsExternal = geometry.layout()
+        expect(settingsExternal.panelFrame == CGRect(x: 1600, y: 1840, width: 640, height: 320),
+               "settings tab gets a compact panel that fits its controls")
+        geometry.compactPanelSize = nil
 
         geometry.screenFrame = screen
         geometry.visibleFrame = visible

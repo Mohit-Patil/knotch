@@ -52,7 +52,9 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if harness {
             makeHarnessWindow()
         } else {
-            let controller = OverlayController(content: makeContent(), sessionProvider: { [weak self] in
+            let controller = OverlayController(content: makeContent(),
+                                               compactPanelSize: CGSize(width: 600, height: 240),
+                                               sessionProvider: { [weak self] in
                 guard let self, !self.settingsSelected else { return nil }
                 return self.store.session
             })
@@ -216,14 +218,20 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             HStack(spacing: 12) {
                 Button(action: { [weak self] in self?.chooseProject() }) {
                     Label("Open Project…", systemImage: "folder")
-                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 16)
+                        .frame(height: 36)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 11))
                 }
-                .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(.black)
+                .buttonStyle(.plain)
                 Button(action: { [weak self] in self?.openHome() }) {
                     Label("Home Shell", systemImage: "terminal")
-                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .frame(height: 36)
+                        .background(Color(white: 0.16), in: RoundedRectangle(cornerRadius: 11))
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
             }
             .controlSize(.large)
         }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(30))
@@ -231,6 +239,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         empty.autoresizingMask = [.width, .height]
         container.addSubview(empty)
         emptyView = empty
+        overlay?.setCompactPanelSize(CGSize(width: 600, height: 240))
         updateStatus()
     }
 
@@ -261,6 +270,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func attach(_ session: any TerminalSession) {
+        overlay?.setCompactPanelSize(nil)
         if settingsSelected { overlay?.setInteractionLock("settings-recording", false) }
         settingsSelected = false
         settingsView?.removeFromSuperview()
@@ -432,6 +442,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             emptyView?.removeFromSuperview()
             emptyView = nil
             settingsSelected = true
+            overlay?.setCompactPanelSize(CGSize(width: 640, height: 320))
             settingsView.frame = container.bounds
             settingsView.autoresizingMask = [.width, .height]
             container.addSubview(settingsView)

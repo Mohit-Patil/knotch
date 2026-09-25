@@ -11,6 +11,7 @@ struct DisplayGeometry {
     var backingScale: CGFloat
 
     var preferredPanelSize = CGSize(width: 960, height: 520)
+    var compactPanelSize: CGSize?
     var triggerSize = CGSize(width: 160, height: 28)
     var panelGap: CGFloat = 0
 
@@ -68,8 +69,10 @@ struct DisplayGeometry {
         let availablePanelHeight = max(0, top - usable.minY)
         // Keep the familiar size on laptop displays; offer more terminal cells
         // on large external monitors without filling the whole desktop.
-        let desiredWidth = min(1280, max(preferredPanelSize.width, usable.width * 0.45))
-        let desiredHeight = min(720, max(preferredPanelSize.height, availablePanelHeight * 0.36))
+        let desiredWidth = compactPanelSize?.width
+            ?? min(1280, max(preferredPanelSize.width, usable.width * 0.45))
+        let desiredHeight = compactPanelSize?.height
+            ?? min(720, max(preferredPanelSize.height, availablePanelHeight * 0.36))
         let panelWidth = min(max(1, desiredWidth), max(1, usable.width))
         let panelHeight = min(max(1, desiredHeight),
                               max(1, availablePanelHeight), max(1, usable.height))
