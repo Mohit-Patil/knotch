@@ -9,6 +9,7 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
         let directory: String
         let running: Bool
         var isSettings = false
+        var isClipboard = false
     }
     private final class TabButton: NSButton {
         var sessionID: UUID?
@@ -60,16 +61,16 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
             button.setButtonType(.toggle)
             button.state = active ? .on : .off
             button.cell?.lineBreakMode = .byTruncatingTail
-            button.image = NSImage(systemSymbolName: item.isSettings ? "gearshape" : (item.running ? "terminal" : "stop.circle"), accessibilityDescription: nil)
+            button.image = NSImage(systemSymbolName: item.isSettings ? "gearshape" : (item.isClipboard ? "doc.on.clipboard" : (item.running ? "terminal" : "stop.circle")), accessibilityDescription: nil)
             button.imagePosition = .imageLeading
             button.contentTintColor = active ? .white : .secondaryLabelColor
-            let status = item.isSettings ? "Preferences" : (item.running ? "Shell running" : "Session ended")
-            button.toolTip = item.isSettings ? "Settings inside Knotch" : "\(item.title)\n\(item.directory)\n\(status) · Double-click to rename"
+            let status = item.isSettings ? "Preferences" : (item.isClipboard ? "Clipboard history" : (item.running ? "Shell running" : "Session ended"))
+            button.toolTip = item.isSettings ? "Settings inside Knotch" : (item.isClipboard ? "Clipboard history inside Knotch" : "\(item.title)\n\(item.directory)\n\(status) · Double-click to rename")
             button.setAccessibilityLabel("\(item.title), \(status)\(active ? ", selected" : "")")
             button.target = self
             button.action = #selector(selectTab(_:))
-            if !item.isSettings { button.onRename = { [weak self] in self?.onRename?(item.id) } }
-            if !item.isSettings {
+            if !item.isSettings && !item.isClipboard { button.onRename = { [weak self] in self?.onRename?(item.id) } }
+            if !item.isSettings && !item.isClipboard {
                 let menu = NSMenu()
                 menu.delegate = self
                 for (title, action) in [("Rename Tab…", #selector(renameTab(_:))), ("Close Tab…", #selector(closeTab(_:)))] {
@@ -81,7 +82,7 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
                 button.menu = menu
             }
             cell.addSubview(button)
-            if !item.isSettings {
+            if !item.isSettings && !item.isClipboard {
                 let close = TabButton(frame: NSRect(x: 174, y: 2, width: 24, height: 24))
                 close.sessionID = item.id
                 close.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close tab")

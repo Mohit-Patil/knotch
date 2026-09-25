@@ -1,0 +1,145 @@
+#if HARNESS_TESTS
+import AppKit
+import GhosttyKit
+
+@MainActor
+enum ClipboardQualification {
+    static func run(coordinator: AppCoordinator) async {
+        var records: [[String: String]] = []
+        func check(_ name: String, _ condition: Bool, _ detail: String) {
+            records.append(["test": name, "result": condition ? "PASSED" : "FAILED", "detail": detail])
+        }
+        let board = NSPasteboard.withUniqueName()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("knotch-clipboard-fixture-\(UUID())", isDirectory: true)
+        let file = folder.appendingPathComponent("history.json")
+        defer {
+            board.releaseGlobally()
+            try? FileManager.default.removeItem(at: folder)
+            coordinator.quitting = true
+            coordinator.store.closeAllAfterConfirmation()
+            coordinator.runtime?.shutdown()
+            let output = ProcessInfo.processInfo.environment["KNOTCH_EVIDENCE"] ?? "/tmp/knotch-clipboard-results.json"
+            let report: [String: Any] = ["engine": "982fe90d941e4b4aab4905ffcbcfdea60bd83343", "results": records]
+            if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: URL(fileURLWithPath: output), options: .atomic)
+            }
+            exit(records.contains { $0["result"] == "FAILED" } ? 1 : 0)
+        }
+        let history = ClipboardHistory(pasteboard: board, storageURL: file)
+        board.clearContents()
+        board.setString("KNOTCH_CLIPBOARD_TEXT", forType: .string)
+        history.captureChange()
+        check("Text capture", history.entries.first?.kind == .text && history.entries.first?.text == "KNOTCH_CLIPBOARD_TEXT",
+              "A bounded plain-text item was captured from an isolated pasteboard")
+        let textID = history.entries.first?.id
+
+        board.clearContents()
+        board.setString("https://example.com/fixture", forType: .string)
+        history.captureChange()
+        check("Link capture", history.entries.first?.kind == .link,
+              "An HTTPS URL is labelled as a link without opening it")
+
+        board.clearContents()
+        board.setString("Formatted fixture", forType: .string)
+        board.setData(Data("{\\rtf1\\ansi Formatted fixture}".utf8), forType: .rtf)
+        history.captureChange()
+        check("Rich text capture", history.entries.first?.kind == .richText && history.entries.first?.data != nil,
+              "RTF and plain fallback remain in one local entry")
+
+        let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=")!
+        board.clearContents()
+        board.setData(png, forType: .png)
+        history.captureChange()
+        check("Image capture", history.entries.first?.kind == .image && history.entries.first?.data == png,
+              "A small PNG image was captured with its binary representation")
+
+        board.clearContents()
+        board.writeObjects([folder.appendingPathComponent("fixture.txt") as NSURL])
+        history.captureChange()
+        check("File capture", history.entries.first?.kind == .files
+              && history.entries.first?.fileURLs?.first?.lastPathComponent == "fixture.txt",
+              "File references were captured as URLs without reading file contents")
+
+        let count = history.entries.count
+        board.clearContents()
+        board.setString("fixture secret", forType: .string)
+        board.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+        history.captureChange()
+        check("Concealed item excluded", history.entries.count == count,
+              "Pasteboard items marked concealed are not retained")
+
+        history.setPaused(true)
+        board.clearContents()
+        board.setString("PAUSED_FIXTURE", forType: .string)
+        history.captureChange()
+        history.setPaused(false)
+        check("Pause capture", history.entries.count == count,
+              "Content copied while paused is not backfilled")
+
+        if let text = history.entries.first(where: { $0.id == textID }) {
+            history.copy(text)
+        }
+        check("Copy earlier item", board.string(forType: .string) == "KNOTCH_CLIPBOARD_TEXT"
+              && history.entries.count == count,
+              "Selecting an older item restores it without adding a duplicate")
+
+        if let image = history.entries.first(where: { $0.kind == .image }) { history.copy(image) }
+        check("Restore image", board.data(forType: .png) == png,
+              "Selecting an image restores its PNG representation")
+        if let rich = history.entries.first(where: { $0.kind == .richText }) { history.copy(rich) }
+        check("Restore rich text", board.string(forType: .string) == "Formatted fixture"
+              && board.data(forType: .rtf) != nil,
+              "Selecting formatted text restores both plain and RTF representations")
+        if let files = history.entries.first(where: { $0.kind == .files }) { history.copy(files) }
+        let restoredFiles = board.readObjects(forClasses: [NSURL.self],
+                                              options: [.urlReadingFileURLsOnly: true]) as? [URL]
+        check("Restore files", restoredFiles?.first?.lastPathComponent == "fixture.txt",
+              "Selecting a file item restores a file URL without reading its contents")
+
+        let restored = ClipboardHistory(pasteboard: board, storageURL: file)
+        check("Local history reload", restored.entries.count == count && restored.entries.first?.kind == .files,
+              "History reloads from the user-private local file")
+        let fileMode = (try? FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber)?.intValue
+        let folderMode = (try? FileManager.default.attributesOfItem(atPath: folder.path)[.posixPermissions] as? NSNumber)?.intValue
+        check("Private storage permissions", fileMode == 0o600 && folderMode == 0o700,
+              "The local history file and its parent directory are owner-only")
+        if let textID { restored.togglePinned(textID) }
+        restored.clearUnpinned()
+        check("Pin and clear", restored.entries.count == 1 && restored.entries[0].id == textID,
+              "Clear unpinned retains the pinned item")
+        restored.setPersistsHistory(false)
+        check("Disable persistence", !FileManager.default.fileExists(atPath: file.path),
+              "Turning persistence off removes the local history file")
+
+        let beforeTimer = restored.entries.count
+        restored.start()
+        board.clearContents()
+        board.setString("TIMER_CAPTURE_FIXTURE", forType: .string)
+        try? await Task.sleep(for: .milliseconds(750))
+        restored.stop()
+        check("Automatic observation", restored.entries.count == beforeTimer + 1
+              && restored.entries.first?.text == "TIMER_CAPTURE_FIXTURE",
+              "A pasteboard change was captured by the running timer without a direct capture call")
+
+        coordinator.useClipboardForFixture(restored)
+        if let runtime = coordinator.runtime,
+           let session = try? GhosttySession(runtime: runtime, directory: folder, testCommand: "/bin/zsh -f") {
+            coordinator.store.adoptFixture(session)
+            coordinator.attach(session)
+            let surface = session.surface
+            coordinator.showClipboard()
+            check("Clipboard tab keeps shell", coordinator.statusLabel.stringValue == "Clipboard"
+                  && session.surface == surface && session.view.superview == nil,
+                  "Selecting Clipboard detaches but does not destroy the Ghostty surface")
+            coordinator.selectSession(id: session.id)
+            check("Return to shell", session.surface == surface && session.view.superview === coordinator.container,
+                  "Returning from Clipboard presents the same terminal view")
+            coordinator.overlay?.hide(restoreFocus: false)
+            session.view.removeFromSuperview()
+            coordinator.store.closeAfterConfirmation(id: session.id)
+        } else {
+            check("Clipboard tab keeps shell", false, "Fixture Ghostty session failed to start")
+        }
+    }
+}
+#endif

@@ -266,8 +266,11 @@ enum HarnessQualification {
             coordinator.store.adoptFixture(session)
             coordinator.attach(session)
             overlay.activate()
+            // This fixture checks Settings and session ownership. Settle the
+            // unrelated spring when display-link callbacks are unavailable in
+            // a headless CLI launch; the motion fixture tests animation itself.
+            overlay.settlePresentationForFixture()
             try await waitFor({ !screen(session).isEmpty }, description: "settings fixture shell")
-            try await waitFor({ !overlay.isAnimating }, description: "expanded panel placement")
             if let layout = overlay.layout, let display = overlay.panel.screen {
                 try check("Expanded display fit",
                           abs(overlay.panel.frame.maxY - display.frame.maxY) < 0.5
@@ -300,7 +303,7 @@ enum HarnessQualification {
             send("sleep 1; printf 'SETTINGS_BACKGROUND_DONE\\n'\r", to: session)
             coordinator.showAccessSettings()
             try check("Compact Settings panel",
-                      overlay.layout?.panelFrame.size == CGSize(width: 720, height: 480),
+                      overlay.layout?.panelFrame.size == CGSize(width: 720, height: 550),
                       "In-panel preferences use a fitted surface rather than the terminal grid size")
             try check("Settings tab owns content", coordinator.statusLabel.stringValue == "Settings" && coordinator.store.session?.id == session.id && session.view.superview == nil && session.surface == surface && Set(NSApp.windows.map(\.windowNumber)) == beforeWindows, "Settings replaced the terminal in the same native panel without creating another window or freeing the shell")
             try await waitFor({ screen(session).contains("\nSETTINGS_BACKGROUND_DONE") }, description: "output while Settings is selected")

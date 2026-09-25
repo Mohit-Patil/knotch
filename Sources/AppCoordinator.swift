@@ -15,19 +15,29 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let container = NSView()
     private let tabs = TerminalTabStrip()
     private let settingsID = UUID()
+    private let clipboardID = UUID()
     private var settingsSelected = false
+    private var clipboardSelected = false
     private var settingsView: NSView?
+    private var clipboardView: NSView?
+    private var clipboard: ClipboardHistory?
     private var savedTerminalPanelSize: CGSize?
     private var runningQualification = false
     private var tabHeight: NSLayoutConstraint?
     private weak var attachedSession: (any TerminalSession)?
     var quitting = false
 
+    #if HARNESS_TESTS
+    func useClipboardForFixture(_ history: ClipboardHistory) { clipboard?.stop(); clipboard = history }
+    #endif
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         let harness = CommandLine.arguments.contains("--harness") || CommandLine.arguments.contains("--self-test")
         var qualification = false
         #if HARNESS_TESTS
-        qualification = CommandLine.arguments.contains("--overlay-self-test") || CommandLine.arguments.contains("--settings-self-test")
+        qualification = CommandLine.arguments.contains("--overlay-self-test")
+            || CommandLine.arguments.contains("--settings-self-test")
+            || CommandLine.arguments.contains("--clipboard-self-test")
         #endif
         runningQualification = qualification || harness
         if !runningQualification { savedTerminalPanelSize = Self.loadTerminalPanelSize() }
@@ -45,6 +55,14 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             showError(error)
             return
         }
+        if !runningQualification {
+            let folder = FileManager.default.urls(for: .applicationSupportDirectory,
+                                                  in: .userDomainMask)[0]
+                .appendingPathComponent(Bundle.main.bundleIdentifier ?? "dev.personal.Knotch", isDirectory: true)
+            clipboard = ClipboardHistory(storageURL: folder.appendingPathComponent("clipboard-history.json"),
+                                         persistsHistory: UserDefaults.standard.object(forKey: "clipboard.persist.v1") as? Bool ?? true)
+            clipboard?.start()
+        }
         #if HARNESS_TESTS
         if CommandLine.arguments.contains("--config-self-test"), let runtime {
             let data = try! JSONSerialization.data(withJSONObject: runtime.appearanceReport(), options: [.prettyPrinted, .sortedKeys])
@@ -60,7 +78,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                                compactPanelSize: CGSize(width: 600, height: 240),
                                                userPanelSize: savedTerminalPanelSize,
                                                sessionProvider: { [weak self] in
-                guard let self, !self.settingsSelected else { return nil }
+                guard let self, !self.settingsSelected, !self.clipboardSelected else { return nil }
                 return self.store.session
             })
             overlay = controller
@@ -94,6 +112,10 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         if CommandLine.arguments.contains("--settings-self-test") {
             Task { @MainActor in await HarnessQualification.runSettings(coordinator: self) }
+            return
+        }
+        if CommandLine.arguments.contains("--clipboard-self-test") {
+            Task { @MainActor in await ClipboardQualification.run(coordinator: self) }
             return
         }
         #endif
@@ -131,6 +153,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         appMenu.addItem(withTitle: "Rename Tab…", action: #selector(renameSelectedTab), keyEquivalent: "").target = self
         appMenu.addItem(withTitle: "Open Project…", action: #selector(chooseProject), keyEquivalent: "o").target = self
         appMenu.addItem(withTitle: "Open Home Shell", action: #selector(openHome), keyEquivalent: "").target = self
+        appMenu.addItem(withTitle: "Clipboard", action: #selector(showClipboard), keyEquivalent: "").target = self
         appMenu.addItem(withTitle: "Minimise Terminal", action: #selector(hideTerminal), keyEquivalent: "h").target = self
         appMenu.addItem(withTitle: "Close Session…", action: #selector(closeSession), keyEquivalent: "w").target = self
         appMenu.addItem(withTitle: "Settings", action: #selector(showAccessSettings), keyEquivalent: ",").target = self
@@ -186,6 +209,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         for (symbol, title, action) in [
             ("plus", "New Tab", #selector(newTab)),
             ("folder.badge.plus", "New Project Tab…", #selector(chooseProject)),
+            ("doc.on.clipboard", "Clipboard", #selector(showClipboard)),
             ("gearshape", "Settings", #selector(showAccessSettings)),
             ("chevron.up", "Minimise Terminal", #selector(hideTerminal)),
             ("xmark", "Close Session…", #selector(closeSession))
@@ -205,6 +229,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tabs.onSelect = { [weak self] id in
             guard let self else { return }
             if id == self.settingsID { self.showAccessSettings() }
+            else if id == self.clipboardID { self.showClipboard() }
             else { self.selectSession(id: id) }
         }
         tabs.onClose = { [weak self] in self?.closeTab(id: $0) }
@@ -276,10 +301,17 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         var items: [TerminalTabStrip.Item] = store.sessions.map {
             .init(id: $0.id, title: $0.displayTitle, directory: $0.directory.path, running: $0.isRunning)
         }
+        items.append(.init(id: clipboardID, title: "Clipboard", directory: "", running: false, isClipboard: true))
         items.append(.init(id: settingsID, title: "Settings", directory: "", running: false, isSettings: true))
-        tabs.update(items, selected: settingsSelected ? settingsID : store.selectedID)
+        tabs.update(items, selected: settingsSelected ? settingsID : (clipboardSelected ? clipboardID : store.selectedID))
         if settingsSelected {
             statusLabel.stringValue = "Settings"
+            statusLabel.toolTip = nil
+            closeButton?.isEnabled = false
+            return
+        }
+        if clipboardSelected {
+            statusLabel.stringValue = "Clipboard"
             statusLabel.toolTip = nil
             closeButton?.isEnabled = false
             return
@@ -300,8 +332,11 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         overlay?.setCompactPanelSize(nil)
         if settingsSelected { overlay?.setInteractionLock("settings-recording", false) }
         settingsSelected = false
+        clipboardSelected = false
         settingsView?.removeFromSuperview()
         settingsView = nil
+        clipboardView?.removeFromSuperview()
+        clipboardView = nil
         if attachedSession !== session {
             attachedSession?.setFocused(false)
             attachedSession?.setPresented(false)
@@ -323,11 +358,11 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         session.onActivate = { [weak self] in self?.selectSession(id: id) }
         session.onInput = { [weak self] in
-            guard let self, !self.settingsSelected, self.store.selectedID == id else { return }
+            guard let self, !self.settingsSelected, !self.clipboardSelected, self.store.selectedID == id else { return }
             self.overlay?.send(.terminalInput)
         }
         session.onInteractionLock = { [weak self] locked in
-            guard let self, !self.settingsSelected, self.store.selectedID == id else { return }
+            guard let self, !self.settingsSelected, !self.clipboardSelected, self.store.selectedID == id else { return }
             self.overlay?.setInteractionLock("terminal", locked)
         }
         updateStatus()
@@ -352,7 +387,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         selectSession(id: store.sessions[sender.tag].id)
     }
     @objc func renameSelectedTab() {
-        if !settingsSelected, let id = store.selectedID { renameSession(id: id) }
+        if !settingsSelected, !clipboardSelected, let id = store.selectedID { renameSession(id: id) }
     }
     private func runAppDialog<T>(_ body: () -> T) -> T {
         overlay?.setInteractionLock("dialog", true)
@@ -407,7 +442,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let overlay { overlay.activate(); return }
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
-        if !settingsSelected, let session = store.session {
+        if !settingsSelected, !clipboardSelected, let session = store.session {
             session.setPresented(true)
             window?.makeFirstResponder(session.view)
             session.setFocused(true)
@@ -420,7 +455,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window?.orderOut(nil)
     }
     @objc func closeSession() {
-        if !settingsSelected, let id = store.selectedID { closeTab(id: id) }
+        if !settingsSelected, !clipboardSelected, let id = store.selectedID { closeTab(id: id) }
     }
     func closeTab(id: UUID) {
         guard let session = store.sessions.first(where: { $0.id == id }) else { return }
@@ -437,13 +472,41 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         session.view.removeFromSuperview()
         store.closeAfterConfirmation(id: id)
-        if settingsSelected { updateStatus(); return }
+        if settingsSelected || clipboardSelected { updateStatus(); return }
         if let selected = store.session { attach(selected) }
         else {
             attachedSession = nil
             showEmptyState()
             overlay?.sessionChanged()
         }
+    }
+    @objc func showClipboard() {
+        guard let clipboard else { return }
+        if !clipboardSelected {
+            attachedSession?.setFocused(false)
+            attachedSession?.setPresented(false)
+            attachedSession?.view.removeFromSuperview()
+            attachedSession = nil
+            window?.makeFirstResponder(nil)
+            overlay?.setInteractionLock("terminal", false)
+            overlay?.setInteractionLock("settings-recording", false)
+            settingsView?.removeFromSuperview()
+            settingsView = nil
+            settingsSelected = false
+            emptyView?.removeFromSuperview()
+            emptyView = nil
+            clipboardSelected = true
+            overlay?.setCompactPanelSize(CGSize(width: 820, height: 560))
+            let view = NSHostingView(rootView: ClipboardView(history: clipboard))
+            view.frame = container.bounds
+            view.autoresizingMask = [.width, .height]
+            container.addSubview(view)
+            clipboardView = view
+            updateStatus()
+            overlay?.sessionChanged()
+        }
+        clipboard.captureChange()
+        showTerminal()
     }
     @objc func showAccessSettings() {
         if shortcut == nil { shortcut = ShortcutController() }
@@ -463,7 +526,12 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 defaultPanelSize: sizing?.defaultSize ?? CGSize(width: 960, height: 520),
                 maximumPanelSize: sizing?.maximum ?? CGSize(width: 1920, height: 1080),
                 panelSizeIsCustom: savedTerminalPanelSize != nil,
-                setPanelSize: { [weak self] size in self?.setTerminalPanelSize(size) })
+                setPanelSize: { [weak self] size in self?.setTerminalPanelSize(size) },
+                clipboardPersists: clipboard?.persistsHistory ?? false,
+                setClipboardPersists: { [weak self] enabled in
+                    self?.clipboard?.setPersistsHistory(enabled)
+                    UserDefaults.standard.set(enabled, forKey: "clipboard.persist.v1")
+                })
         }
         guard let settingsView else { return }
         if !settingsSelected {
@@ -475,8 +543,11 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             overlay?.setInteractionLock("terminal", false)
             emptyView?.removeFromSuperview()
             emptyView = nil
+            clipboardView?.removeFromSuperview()
+            clipboardView = nil
+            clipboardSelected = false
             settingsSelected = true
-            overlay?.setCompactPanelSize(CGSize(width: 720, height: 480))
+            overlay?.setCompactPanelSize(CGSize(width: 720, height: 550))
             settingsView.frame = container.bounds
             settingsView.autoresizingMask = [.width, .height]
             container.addSubview(settingsView)
@@ -502,12 +573,13 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         store.closeAllAfterConfirmation()
+        clipboard?.stop()
         shortcut?.shutdown()
         runtime?.shutdown()
         return .terminateNow
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool { hideTerminal(); return false }
-    func windowDidBecomeKey(_ notification: Notification) { if !settingsSelected { store.session?.setFocused(true) } }
+    func windowDidBecomeKey(_ notification: Notification) { if !settingsSelected && !clipboardSelected { store.session?.setFocused(true) } }
     func windowDidResignKey(_ notification: Notification) { store.session?.setFocused(false) }
     func showError(_ error: Error) {
         let alert = NSAlert(error: error)

@@ -31,7 +31,7 @@ In the harness, use **Open Project…** or **Home Shell**. A direct fixture dire
 
 Run `scripts/test-native.sh settings` for the focused Settings/session and display-edge fixture. It uses the connected display's AppKit geometry. Model tests cover notched, plain, hidden-menu, tiny, and 3840×2160 layouts. Full physical multi-monitor switching and hover behavior still need owner-side qualification.
 
-This alpha supports multiple live sessions and an in-panel Settings tab. Command presets, automatic agent launch, and session restoration are not implemented. The manual Codex and Claude Code checks reached their trust prompts and exercised navigation and exit; no approval, authentication flow, model request, or paid action was tested. Nothing has been pushed or prepared for distribution.
+This alpha supports multiple live sessions, an in-panel Clipboard tab, and an in-panel Settings tab. Command presets, automatic agent launch, and session restoration are not implemented. The manual Codex and Claude Code checks reached their trust prompts and exercised navigation and exit; no approval, authentication flow, model request, or paid action was tested. Nothing has been pushed or prepared for distribution.
 
 The September 25 follow-up corrects the detached position and launch behavior shown in the owner screenshot. See the [notch and minimise correction](docs/decisions/0002-notch-attachment-and-minimise.md) for exact behavior and test boundaries.
 
@@ -52,3 +52,9 @@ To resize a terminal, drag its bottom edge vertically or either lower corner dia
 Ghostty's terminal title events name each tab, with its directory as the initial fallback. Double-click or right-click a tab to rename it; clearing the name restores automatic titles. Each tab keeps its own live process, output and scroll position when you switch or minimise. The icon and accessible label distinguish a running shell from an ended session. These are session observations, not claims that an AI task is finished; the terminal's retained output remains the work record.
 
 Use the tab's **×** to close only that session, with confirmation while its shell is alive. Quitting warns before ending all live sessions. Tabs, custom names and scrollback currently live only for this app run; no transcript database, automatic agent completion detection, or session restoration is added.
+
+### Clipboard history
+
+The **Clipboard** tab records new text, links, rich text, images, and file references copied while Knotch is running. It offers search, image previews, pinning, removal, and **Copy** to put a previous item back on the system pasteboard. Copying an item does not paste into another app or run a terminal command. Switching to Clipboard leaves terminal processes and scrollback intact.
+
+History is stored only on this Mac under Knotch's private Application Support directory and restored after quitting. Use **Pause** in Clipboard to stop collecting new items, **Clear unpinned history** or **Clear all history…** to remove them, and **Settings → Keep history after quitting Knotch** to turn disk retention off. Concealed/transient pasteboard items are skipped; other sensitive text may still be copied by apps, so clear or pause history when needed. The app keeps at most 50 entries, images up to 4 MB, and text up to 100 KB per entry; file entries retain URLs rather than reading file contents. No clipboard item is uploaded by Knotch or written to diagnostic evidence. This history does not change Ghostty's separate consent policy for terminal-program clipboard requests.

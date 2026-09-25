@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODE="${1:-all}"
-[[ "$MODE" == all || "$MODE" == harness || "$MODE" == overlay || "$MODE" == settings ]] || { printf 'usage: %s [all|harness|overlay|settings]\n' "$0" >&2; exit 1; }
+[[ "$MODE" == all || "$MODE" == harness || "$MODE" == overlay || "$MODE" == settings || "$MODE" == clipboard ]] || { printf 'usage: %s [all|harness|overlay|settings|clipboard]\n' "$0" >&2; exit 1; }
 APP="$ROOT/.build/test-app/Build/Products/Release/Knotch.app/Contents/MacOS/Knotch"
 [[ -x "$APP" ]] || { printf 'First run scripts/build.sh --test\n' >&2; exit 1; }
 mkdir -p "$ROOT/.evidence"
@@ -23,3 +23,4 @@ if [[ "$MODE" == all || "$MODE" == harness ]]; then run_fixture harness --self-t
 if [[ "$MODE" == all || "$MODE" == overlay ]]; then run_fixture overlay --overlay-self-test; fi
 
 if [[ "$MODE" == all || "$MODE" == settings ]]; then run_fixture settings --settings-self-test; fi
+if [[ "$MODE" == all || "$MODE" == clipboard ]]; then run_fixture clipboard --clipboard-self-test; fi

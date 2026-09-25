@@ -112,6 +112,12 @@ final class OverlayController: NSObject, NSWindowDelegate {
     // owner's real pointer when a test window happens to appear underneath it.
     var fixtureControlsTracking = false
     var reduceMotionForFixture: Bool?
+    func settlePresentationForFixture() {
+        let target = state.presentation == .collapsed ? 0.0 : 1.0
+        motion.cancel(at: target)
+        renderMotionFrame(target, reducedMotion: reduceMotion)
+        if state.presentation == .collapsed { finishCollapse() }
+    }
     #endif
 
     private var reduceMotion: Bool {

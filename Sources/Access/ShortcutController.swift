@@ -65,13 +65,17 @@ final class ShortcutController: NSObject {
                           onRecordingChange: @escaping (Bool) -> Void,
                           panelSize: CGSize, defaultPanelSize: CGSize, maximumPanelSize: CGSize,
                           panelSizeIsCustom: Bool,
-                          setPanelSize: @escaping (CGSize?) -> Void) -> NSView {
+                          setPanelSize: @escaping (CGSize?) -> Void,
+                          clipboardPersists: Bool,
+                          setClipboardPersists: @escaping (Bool) -> Void) -> NSView {
         NSHostingView(rootView: AccessSettings(controller: self, initialHover: hoverEnabled,
                                                setHover: setHover, onRecordingChange: onRecordingChange,
                                                panelSize: panelSize, defaultPanelSize: defaultPanelSize,
                                                maximumPanelSize: maximumPanelSize,
                                                panelSizeIsCustom: panelSizeIsCustom,
-                                               setPanelSize: setPanelSize))
+                                               setPanelSize: setPanelSize,
+                                               clipboardPersists: clipboardPersists,
+                                               setClipboardPersists: setClipboardPersists))
     }
 
     func shutdown() {
@@ -89,28 +93,33 @@ private struct AccessSettings: View {
     let defaultPanelSize: CGSize
     let maximumPanelSize: CGSize
     let setPanelSize: (CGSize?) -> Void
+    let setClipboardPersists: (Bool) -> Void
     @State private var hover: Bool
     @State private var candidate: TerminalShortcut
     @State private var message = "Record a shortcut, then choose Enable."
     @State private var panelWidth: Double
     @State private var panelHeight: Double
     @State private var panelSizeIsCustom: Bool
+    @State private var clipboardPersists: Bool
 
     init(controller: ShortcutController, initialHover: Bool, setHover: @escaping (Bool) -> Void,
          onRecordingChange: @escaping (Bool) -> Void,
          panelSize: CGSize, defaultPanelSize: CGSize, maximumPanelSize: CGSize,
-         panelSizeIsCustom: Bool, setPanelSize: @escaping (CGSize?) -> Void) {
+         panelSizeIsCustom: Bool, setPanelSize: @escaping (CGSize?) -> Void,
+         clipboardPersists: Bool, setClipboardPersists: @escaping (Bool) -> Void) {
         self.controller = controller
         self.setHover = setHover
         self.onRecordingChange = onRecordingChange
         self.defaultPanelSize = defaultPanelSize
         self.maximumPanelSize = maximumPanelSize
         self.setPanelSize = setPanelSize
+        self.setClipboardPersists = setClipboardPersists
         _hover = State(initialValue: initialHover)
         _candidate = State(initialValue: controller.current ?? .suggested)
         _panelWidth = State(initialValue: Double(panelSize.width))
         _panelHeight = State(initialValue: Double(panelSize.height))
         _panelSizeIsCustom = State(initialValue: panelSizeIsCustom)
+        _clipboardPersists = State(initialValue: clipboardPersists)
     }
     private var widthSelection: Binding<Double> {
         Binding(get: { panelWidth }, set: { value in
@@ -178,6 +187,14 @@ private struct AccessSettings: View {
                     Text("Drag the bottom edge or lower corners")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Clipboard history").font(.headline)
+                Toggle("Keep history after quitting Knotch", isOn: $clipboardPersists)
+                    .onChange(of: clipboardPersists) { _, value in setClipboardPersists(value) }
+                Text("Saved only on this Mac. Pause capture or clear items in the Clipboard tab.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
         }
