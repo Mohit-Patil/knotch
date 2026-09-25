@@ -86,7 +86,6 @@ final class OverlayController: NSObject, NSWindowDelegate {
     private(set) var layout: OverlayLayout?
     var triggerFrame: NSRect { triggerPanel.frame }
     private let content: NSView
-    private var compactPanelSize: CGSize?
     private var userPanelSize: CGSize?
     private var resizeHandles: [OverlayResizeHandleView] = []
     private var resizeGesture: (handle: PanelResizeHandle, origin: NSPoint, size: CGSize)?
@@ -101,7 +100,6 @@ final class OverlayController: NSObject, NSWindowDelegate {
     private var isApplyingPresentation = false
     private var systemDialogDepth = 0
     private let motion = OverlayMotion()
-    private let sizeMotion = OverlayMotion()
     private var immediatePresentation = false
     var isAnimating: Bool { motion.isAnimating }
 
@@ -128,10 +126,9 @@ final class OverlayController: NSObject, NSWindowDelegate {
         return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
-    init(content: NSView, compactPanelSize: CGSize? = nil, userPanelSize: CGSize? = nil,
+    init(content: NSView, userPanelSize: CGSize? = nil,
          sessionProvider: @escaping () -> (any TerminalSession)?) {
         self.content = content
-        self.compactPanelSize = compactPanelSize
         self.userPanelSize = userPanelSize
         self.sessionProvider = sessionProvider
         triggerPanel = OverlayNativePanel(contentRect: NSRect(x: 0, y: 0, width: 160, height: 28),
@@ -213,12 +210,6 @@ final class OverlayController: NSObject, NSWindowDelegate {
     }
 
     func setHoverEnabled(_ enabled: Bool) { send(.hoverEnabledChanged(enabled)) }
-
-    func setCompactPanelSize(_ size: CGSize?, animated: Bool = false) {
-        guard compactPanelSize != size else { return }
-        compactPanelSize = size
-        placeOnSelectedScreen(animatedSizeChange: animated)
-    }
 
     func setUserPanelSize(_ size: CGSize?) {
         guard userPanelSize != size else { return }
@@ -521,7 +512,6 @@ final class OverlayController: NSObject, NSWindowDelegate {
     }
 
     private func present(_ presentation: OverlayPresentation) {
-        sizeMotion.cancel(at: 1)
         isApplyingPresentation = true
         defer { isApplyingPresentation = false }
         updateTriggerAppearance()
@@ -604,9 +594,8 @@ final class OverlayController: NSObject, NSWindowDelegate {
             : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
     }
 
-    private func placeOnSelectedScreen(animatedSizeChange: Bool = false) {
+    private func placeOnSelectedScreen() {
         guard let screen = selectedScreen() else { return }
-        let startingFrame = panel.frame
         let displayID = Self.displayID(for: screen)
         if state.targetDisplayID != displayID { send(.displayChanged(displayID)) }
         var geometry = DisplayGeometry(screenFrame: screen.frame,
@@ -616,7 +605,6 @@ final class OverlayController: NSObject, NSWindowDelegate {
                                        auxiliaryTopRight: screen.auxiliaryTopRightArea,
                                        backingScale: screen.backingScaleFactor)
         geometry.panelGap = 0
-        geometry.compactPanelSize = compactPanelSize
         geometry.userPanelSize = userPanelSize
         let layout = geometry.layout()
         if let old = self.layout, old.panelFrame == layout.panelFrame,
@@ -630,33 +618,6 @@ final class OverlayController: NSObject, NSWindowDelegate {
             : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         triggerPanel.anchorsToScreenEdge = true
         triggerPanel.setFrame(layout.triggerFrame, display: true)
-        let animateSize = animatedSizeChange && state.presentation != .collapsed
-            && panel.isVisible && !motion.isAnimating
-        sizeMotion.cancel(at: animateSize ? 0 : 1)
-        if animateSize {
-            motion.cancel(at: 1)
-            let destination = layout.panelFrame
-            sizeMotion.move(to: 1, in: panelRoot, reducedMotion: reduceMotion,
-                            animated: true, frame: { [weak self] value, _ in
-                guard let self else { return }
-                let progress = max(0, min(1.08, value))
-                let width = min(layout.usableFrame.width,
-                                max(1, startingFrame.width + (destination.width - startingFrame.width) * progress))
-                let height = min(layout.usableFrame.height,
-                                 max(1, startingFrame.height + (destination.height - startingFrame.height) * progress))
-                let x = max(layout.usableFrame.minX,
-                            min(destination.midX - width / 2, layout.usableFrame.maxX - width))
-                let frame = NSRect(x: x, y: destination.maxY - height, width: width, height: height)
-                self.panel.setFrame(frame, display: false)
-                self.content.frame = NSRect(x: (width - destination.width) / 2,
-                                            y: height - destination.height,
-                                            width: destination.width, height: destination.height)
-            }, completion: { [weak self] in
-                self?.renderMotionFrame(1, reducedMotion: self?.reduceMotion ?? false)
-            })
-            updateTriggerAppearance()
-            return
-        }
         motion.cancel(at: state.presentation == .collapsed ? 0 : 1)
         renderMotionFrame(motion.value, reducedMotion: reduceMotion)
         if state.presentation == .collapsed { finishCollapse() }

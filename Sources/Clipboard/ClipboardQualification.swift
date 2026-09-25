@@ -150,13 +150,26 @@ enum ClipboardQualification {
             coordinator.store.adoptFixture(session)
             coordinator.attach(session)
             let surface = session.surface
+            let sharedSize = coordinator.overlay?.layout?.panelFrame.size
             coordinator.showClipboard()
+            check("Shared Clipboard panel size", coordinator.overlay?.layout?.panelFrame.size == sharedSize,
+                  "Switching from Terminal to Clipboard retains the same panel dimensions")
             check("Clipboard tab keeps shell", coordinator.statusLabel.stringValue == "Clipboard"
                   && session.surface == surface && session.view.superview == nil,
                   "Selecting Clipboard detaches but does not destroy the Ghostty surface")
             coordinator.selectSession(id: session.id)
             check("Return to shell", session.surface == surface && session.view.superview === coordinator.container,
                   "Returning from Clipboard presents the same terminal view")
+            coordinator.overlay?.setUserPanelSize(CGSize(width: 900, height: 600))
+            let customSize = coordinator.overlay?.layout?.panelFrame.size
+            coordinator.showClipboard()
+            check("Custom size shared with Clipboard", coordinator.overlay?.layout?.panelFrame.size == customSize,
+                  "Saved panel dimensions are retained when the Clipboard tab opens")
+            coordinator.showAccessSettings()
+            check("Custom size shared with Settings", coordinator.overlay?.layout?.panelFrame.size == customSize,
+                  "Settings uses the same custom dimensions as Terminal and Clipboard")
+            coordinator.selectSession(id: session.id)
+            coordinator.overlay?.setUserPanelSize(nil)
             let marker = folder.appendingPathComponent("drop-must-not-run")
             let command = "touch \(marker.path)"
             board.clearContents()

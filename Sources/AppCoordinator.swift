@@ -87,7 +87,6 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             makeHarnessWindow()
         } else {
             let controller = OverlayController(content: makeContent(),
-                                               compactPanelSize: CGSize(width: 600, height: 240),
                                                userPanelSize: savedTerminalPanelSize,
                                                sessionProvider: { [weak self] in
                 guard let self, !self.settingsSelected, !self.clipboardSelected else { return nil }
@@ -310,7 +309,6 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         empty.autoresizingMask = [.width, .height]
         container.addSubview(empty)
         emptyView = empty
-        overlay?.setCompactPanelSize(CGSize(width: 600, height: 240))
         updateStatus()
     }
 
@@ -348,8 +346,6 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func attach(_ session: any TerminalSession) {
-        let fromClipboard = clipboardSelected
-        overlay?.setCompactPanelSize(nil, animated: fromClipboard)
         if settingsSelected { overlay?.setInteractionLock("settings-recording", false) }
         settingsSelected = false
         clipboardSelected = false
@@ -527,7 +523,6 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             emptyView?.removeFromSuperview()
             emptyView = nil
             clipboardSelected = true
-            overlay?.setCompactPanelSize(CGSize(width: 820, height: 560), animated: true)
             let view = NSHostingView(rootView: ClipboardView(history: clipboard,
                                                               onDragChange: { [weak self] dragging in
                 self?.clipboardDragChanged(dragging)
@@ -610,8 +605,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 onRecordingChange: { [weak self] recording in
                     self?.overlay?.setInteractionLock("settings-recording", recording)
                 },
-                panelSize: sizing?.current ?? CGSize(width: 960, height: 520),
-                defaultPanelSize: sizing?.defaultSize ?? CGSize(width: 960, height: 520),
+                panelSize: sizing?.current ?? CGSize(width: 720, height: 550),
+                defaultPanelSize: sizing?.defaultSize ?? CGSize(width: 720, height: 550),
                 maximumPanelSize: sizing?.maximum ?? CGSize(width: 1920, height: 1080),
                 panelSizeIsCustom: savedTerminalPanelSize != nil,
                 setPanelSize: { [weak self] size in self?.setTerminalPanelSize(size) },
@@ -635,7 +630,6 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             clipboardView = nil
             clipboardSelected = false
             settingsSelected = true
-            overlay?.setCompactPanelSize(CGSize(width: 720, height: 550))
             settingsView.frame = container.bounds
             settingsView.autoresizingMask = [.width, .height]
             container.addSubview(settingsView)

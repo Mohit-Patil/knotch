@@ -247,9 +247,9 @@ enum HarnessQualification {
                 throw TerminalFailure.unavailable("No overlay runtime")
             }
             overlay.fixtureControlsTracking = true
-            try check("Compact empty panel",
-                      overlay.layout?.panelFrame.size == CGSize(width: 600, height: 240),
-                      "No-shell presentation does not cover a full terminal-sized area")
+            try check("Shared empty panel",
+                      overlay.layout?.panelFrame.size == CGSize(width: 720, height: 550),
+                      "No-shell presentation uses the same size as Settings and Terminal")
             if let layout = overlay.layout, let display = overlay.panel.screen {
                 let attached = abs(overlay.triggerFrame.maxY - display.frame.maxY) < 0.5
                     && abs(overlay.panel.frame.maxY - display.frame.maxY) < 0.5
@@ -302,9 +302,9 @@ enum HarnessQualification {
             let beforeWindows = Set(NSApp.windows.map(\.windowNumber))
             send("sleep 1; printf 'SETTINGS_BACKGROUND_DONE\\n'\r", to: session)
             coordinator.showAccessSettings()
-            try check("Compact Settings panel",
+            try check("Shared Settings panel",
                       overlay.layout?.panelFrame.size == CGSize(width: 720, height: 550),
-                      "In-panel preferences use a fitted surface rather than the terminal grid size")
+                      "In-panel preferences retain the same panel dimensions as Terminal")
             try check("Settings tab owns content", coordinator.statusLabel.stringValue == "Settings" && coordinator.store.session?.id == session.id && session.view.superview == nil && session.surface == surface && Set(NSApp.windows.map(\.windowNumber)) == beforeWindows, "Settings replaced the terminal in the same native panel without creating another window or freeing the shell")
             try await waitFor({ screen(session).contains("\nSETTINGS_BACKGROUND_DONE") }, description: "output while Settings is selected")
             coordinator.selectSession(id: session.id)

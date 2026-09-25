@@ -163,7 +163,7 @@ private struct AccessSettings: View {
             }
             Divider()
             VStack(alignment: .leading, spacing: 10) {
-                Text("Terminal panel size").font(.headline)
+                Text("Panel size").font(.headline)
                 HStack {
                     Text("Width").frame(width: 48, alignment: .leading)
                     Slider(value: widthSelection,

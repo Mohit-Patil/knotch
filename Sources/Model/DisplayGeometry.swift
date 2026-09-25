@@ -10,8 +10,7 @@ struct DisplayGeometry {
     var auxiliaryTopRight: CGRect?
     var backingScale: CGFloat
 
-    var preferredPanelSize = CGSize(width: 960, height: 520)
-    var compactPanelSize: CGSize?
+    var preferredPanelSize = CGSize(width: 720, height: 550)
     var userPanelSize: CGSize?
     var triggerSize = CGSize(width: 160, height: 28)
     var panelGap: CGFloat = 0
@@ -68,12 +67,10 @@ struct DisplayGeometry {
 
     private func panelFrame(centerX: CGFloat, top: CGFloat, usable: CGRect) -> CGRect {
         let availablePanelHeight = max(0, top - usable.minY)
-        // Keep the familiar size on laptop displays; offer more terminal cells
-        // on large external monitors without filling the whole desktop.
-        let desiredWidth = compactPanelSize?.width ?? userPanelSize?.width
-            ?? min(1280, max(preferredPanelSize.width, usable.width * 0.45))
-        let desiredHeight = compactPanelSize?.height ?? userPanelSize?.height
-            ?? min(720, max(preferredPanelSize.height, availablePanelHeight * 0.36))
+        // Every in-panel tab shares one size. User resizing applies to the
+        // whole workspace, while small displays still clamp it to fit.
+        let desiredWidth = userPanelSize?.width ?? preferredPanelSize.width
+        let desiredHeight = userPanelSize?.height ?? preferredPanelSize.height
         let panelWidth = min(max(1, desiredWidth), max(1, usable.width))
         let panelHeight = min(max(1, desiredHeight),
                               max(1, availablePanelHeight), max(1, usable.height))

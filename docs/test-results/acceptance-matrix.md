@@ -164,3 +164,7 @@ The owner-added Clipboard feature is outside the original terminal acceptance in
 ## Clipboard drag follow-up
 
 The [25-check native report](clipboard-drop.json) extends the isolated clipboard fixture with a private drag ID, shell path escaping, image export permissions and cleanup, unsafe-text detection, and direct insertion into a real Ghostty surface without executing the command. The Settings regression fixture passed 10 checks, model tests passed, and Release/test builds succeeded. A physical thumbnail drag across a tab into the terminal, focus behavior during that drag, and visual animation smoothness remain NOT_RUN. The running canonical process was not restarted because it retains a live shell.
+
+## Shared panel size follow-up
+
+Terminal, Clipboard, Settings, and the empty state now use one 720×550-point default panel. A saved custom size applies to every tab and remains bounded by the selected display. The [28-check native report](shared-panel-size.json) includes default Terminal-to-Clipboard size retention, custom dimensions across Clipboard and Settings, unchanged Ghostty surface, and terminal input after those switches. The Settings fixture passed 10 checks and model tests passed. Physical resizing and visual smoothness on all connected displays remain NOT_RUN.

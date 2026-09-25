@@ -81,3 +81,9 @@ The [18-check native fixture](test-results/clipboard-history.json) used a unique
 ## Clipboard drag into terminal
 
 Clipboard thumbnails now start a private drag. Hovering over a terminal tab selects and focuses that running Ghostty session; releasing on the tab or terminal inserts text or escaped file paths without Return. Screenshot images are exported to a private temporary file and their path is inserted. The Clipboard-to-terminal panel size change uses a display-linked spring and Reduce Motion. See [decision](decisions/0012-clipboard-to-terminal-drop.md). The focused [25-check fixture](test-results/clipboard-drop.json) verifies real-engine insertion without command execution and the supporting file, path, and privacy rules. Physical drag timing and perceived smoothness remain unqualified.
+
+## Shared panel size
+
+The owner requested Terminal and all in-panel surfaces to match Settings. The expanded default is now 720×550 points for Terminal, Clipboard, Settings, and empty state, with the same saved custom dimensions applied across tabs. Switching tabs no longer triggers a window-size transition; notch reveal and hide keep their spring motion. The panel still clamps to the selected display. See [decision](decisions/0013-shared-panel-size.md).
+
+The [28-check clipboard fixture](test-results/shared-panel-size.json) verifies the same real Ghostty surface through tab switches and checks that both default and custom dimensions remain shared. The focused Settings fixture passed 10 checks, and model tests passed. Physical pointer resizing and the visual transition on every display remain unqualified.
