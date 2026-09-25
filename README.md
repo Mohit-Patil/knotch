@@ -1,6 +1,6 @@
 # Knotch
 
-Knotch is a local macOS alpha that keeps one real Ghostty terminal session near the top of the screen. The collapsed black shape joins the MacBook camera cutout at the screen edge. Its small visible lip opens a terminal directly below the cutout; readable content stays outside the hardware. On other displays, the trigger sits near the top center. Hiding the panel leaves the shell running. Quitting or explicitly closing the session ends it.
+Knotch is a local macOS alpha that keeps one real Ghostty terminal session near the top of the screen. The collapsed black shape joins the MacBook camera cutout at the screen edge. The expanded panel starts at the same screen edge, placing its title and controls beside the camera and terminal content directly below it. There is no separate handle line. On other displays, the trigger sits near the top center. Hiding the panel leaves the shell running. Quitting or explicitly closing the session ends it.
 
 The app is built for Apple Silicon macOS 26 or later. The qualified local toolchain is Xcode 27.0 with macOS SDK 27.0, Swift 6.4, Zig 0.16.0, and XcodeGen 2.46.0. The full Ghostty core is pinned to commit `982fe90d941e4b4aab4905ffcbcfdea60bd83343`; its internal embedder API is revision-bound.
 
