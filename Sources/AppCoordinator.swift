@@ -35,6 +35,14 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             showError(error)
             return
         }
+        #if HARNESS_TESTS
+        if CommandLine.arguments.contains("--config-self-test"), let runtime {
+            let data = try! JSONSerialization.data(withJSONObject: runtime.appearanceReport(), options: [.prettyPrinted, .sortedKeys])
+            FileHandle.standardOutput.write(data)
+            runtime.shutdown()
+            exit(0)
+        }
+        #endif
         if harness {
             makeHarnessWindow()
         } else {

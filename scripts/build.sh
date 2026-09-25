@@ -44,7 +44,8 @@ mkdir -p "$RESOURCES/ThirdParty"
 # the generated engine directories, so removed upstream files cannot linger.
 rm -rf "$RESOURCES/ghostty" "$RESOURCES/terminfo" "$RESOURCES/ThirdParty/Ghostty-LICENSE"
 mkdir -p "$RESOURCES/ghostty"
-# The alpha uses an app-owned palette. Unused third-party themes are not bundled.
+# Bundle themes from the same pinned dependency as the native engine.
+ditto "$RESOURCE_SOURCE/ghostty/themes" "$RESOURCES/ghostty/themes"
 ditto "$RESOURCE_SOURCE/ghostty/shell-integration" "$RESOURCES/ghostty/shell-integration"
 ditto "$RESOURCE_SOURCE/terminfo" "$RESOURCES/terminfo"
 ditto "$ROOT/ThirdParty/Notices" "$RESOURCES/ThirdParty/Notices"

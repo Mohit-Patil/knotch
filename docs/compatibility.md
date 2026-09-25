@@ -10,7 +10,7 @@ Current qualification is on one arm64 MacBook Air M5 (16 GB, built-in 2560×1664
 | Native overlay controller and panel | PASSED within fixture scope | Supplied tracking events preserved another editor's key focus during dwell; deliberate activation focused a real terminal. Escape, reentry, locks, disabled hover, and 200 panel cycles passed. |
 | Shipping accessory-mode interaction | PASSED for tested path | Manual click and input reached a real shell; Hide and handle click reopened the same PID `87889`. |
 | Physical cross-app hover and global shortcut | NOT_RUN | No physical pointer hover across apps has been qualified. Registration succeeded, but targeted computer-control key input did not prove global delivery; shortcut was disabled afterward. |
-| Native mouse selection and clipboard | PASSED for tested path | Drag selection and Command-C/Command-V worked. Multiline confirmation is implemented but unqualified. Terminal-initiated clipboard reads are denied by app configuration. |
+| Native mouse selection and clipboard | PASSED for tested path | Drag selection and Command-C/Command-V worked. Multiline confirmation is implemented but unqualified. The native clipboard adapter rejects unsupported terminal read-confirmation requests. |
 | Dead-key input | PASSED for tested path | Option-E followed by E entered `é`. Direct computer-control `typeText` lost some Unicode characters; native paste and the engine Unicode fixture succeeded. |
 | Non-Latin IME and VoiceOver | NOT_RUN | AppKit text-input and chrome labels exist; full terminal AX text/selection support is missing. A real IME and VoiceOver flow still need work. |
 | Intel Mac, macOS before 26 | NOT_RUN | Current build scripts intentionally produce native arm64 and require the macOS 27 SDK. |

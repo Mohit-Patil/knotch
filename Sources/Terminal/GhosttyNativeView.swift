@@ -160,33 +160,27 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient {
               let character = event.charactersIgnoringModifiers?.lowercased() else {
             return super.performKeyEquivalent(with: event)
         }
-        let plainCommand = event.modifierFlags.intersection([.control, .option, .shift]).isEmpty
-        switch character {
-        case "c" where plainCommand: onInput?(); return binding("copy_to_clipboard")
-        case "v" where plainCommand: onInput?(); return binding("paste_from_clipboard")
-        default:
-            // Let app-owned shortcuts (especially Command-W) reach the menu.
-            if character == "w" || ("1"..."9").contains(character) {
-                return super.performKeyEquivalent(with: event)
-            }
-            guard let surface else { return super.performKeyEquivalent(with: event) }
-            var key = ghostty_input_key_s()
-            key.action = GHOSTTY_ACTION_PRESS
-            key.keycode = UInt32(event.keyCode)
-            key.mods = Self.mods(event.modifierFlags)
-            key.consumed_mods = Self.mods(event.modifierFlags.subtracting([.control, .command]))
-            key.unshifted_codepoint = event.characters(byApplyingModifiers: [])?.unicodeScalars.first?.value ?? 0
-            var bindingFlags = GHOSTTY_BINDING_FLAGS_CONSUMED
-            let isBinding = (event.characters ?? "").withCString { pointer in
-                key.text = pointer
-                return ghostty_surface_key_is_binding(surface, key, &bindingFlags)
-            }
-            if isBinding && bindingFlags.rawValue & GHOSTTY_BINDING_FLAGS_CONSUMED.rawValue != 0 {
-                keyDown(with: event)
-                return true
-            }
+        // Let app-owned shortcuts (especially Command-W) reach the menu.
+        if character == "w" || ("1"..."9").contains(character) {
             return super.performKeyEquivalent(with: event)
         }
+        guard let surface else { return super.performKeyEquivalent(with: event) }
+        var key = ghostty_input_key_s()
+        key.action = GHOSTTY_ACTION_PRESS
+        key.keycode = UInt32(event.keyCode)
+        key.mods = Self.mods(event.modifierFlags)
+        key.consumed_mods = Self.mods(event.modifierFlags.subtracting([.control, .command]))
+        key.unshifted_codepoint = event.characters(byApplyingModifiers: [])?.unicodeScalars.first?.value ?? 0
+        var bindingFlags = GHOSTTY_BINDING_FLAGS_CONSUMED
+        let isBinding = (event.characters ?? "").withCString { pointer in
+            key.text = pointer
+            return ghostty_surface_key_is_binding(surface, key, &bindingFlags)
+        }
+        if isBinding && bindingFlags.rawValue & GHOSTTY_BINDING_FLAGS_CONSUMED.rawValue != 0 {
+            keyDown(with: event)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
     }
 
     override func keyDown(with event: NSEvent) {

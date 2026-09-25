@@ -32,3 +32,11 @@ In the harness, use **Open Project…** or **Home Shell**. A direct fixture dire
 This alpha has one session. Tabs, command presets, automatic agent launch, and session restoration are not implemented. The manual Codex and Claude Code checks reached their trust prompts and exercised navigation and exit; no approval, authentication flow, model request, or paid action was tested. Nothing has been pushed or prepared for distribution.
 
 The September 25 follow-up corrects the detached position and launch behavior shown in the owner screenshot. See the [notch and minimise correction](docs/decisions/0002-notch-attachment-and-minimise.md) for exact behavior and test boundaries.
+
+### Ghostty configuration
+
+Knotch reads Ghostty's standard personal configuration files and their `config-file` includes, using the pinned engine's own lookup and precedence. Fonts, colors, themes, padding, and terminal bindings are no longer replaced by an app-owned palette. Theme resources are bundled from that engine revision; no separate Ghostty app is required. Restart Knotch to apply configuration edits. Your configuration files are never rewritten.
+
+The native notch controls and app shortcuts remain Knotch's. Ghostty actions for tabs, splits, and other unsupported window features do not become available just by loading their bindings. The clipboard adapter still rejects terminal read-confirmation requests it does not support. Transparency is composited within Knotch's black panel, so its window appearance is not identical to the standalone Ghostty window.
+
+Knotch clears an inherited `NO_COLOR` flag before engine initialization: launching a GUI terminal from a coding tool must not force its child CLIs into monochrome. Explicit `env = NO_COLOR=…` in Ghostty configuration or a shell startup file still takes effect later. Existing processes retain their environment until restarted.

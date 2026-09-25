@@ -9,6 +9,27 @@ final class GhosttyRuntime {
     private var config: ghostty_config_t?
     private var observers: [NSObjectProtocol] = []
 
+    #if HARNESS_TESTS
+    func appearanceReport() -> [String: Any] {
+        guard let config else { return [:] }
+        var report: [String: Any] = [:]
+        for key in ["font-size"] {
+            var value: Float = 0
+            if ghostty_config_get(config, &value, key, UInt(key.utf8.count)) { report[key] = value }
+        }
+        var opacity: Double = 0
+        if ghostty_config_get(config, &opacity, "background-opacity", 18) { report["background-opacity"] = opacity }
+        for key in ["background", "foreground"] {
+            var value = ghostty_config_color_s()
+            if ghostty_config_get(config, &value, key, UInt(key.utf8.count)) {
+                report[key] = String(format: "#%02x%02x%02x", value.r, value.g, value.b)
+            }
+        }
+        report["inherited_no_color_removed"] = getenv("NO_COLOR") == nil
+        return report
+    }
+    #endif
+
     init() throws {
         guard let resources = Bundle.main.resourceURL else {
             throw TerminalFailure.unavailable("The app bundle has no Resources directory. Rebuild with scripts/build.sh.")
@@ -24,6 +45,10 @@ final class GhosttyRuntime {
         }
         setenv("GHOSTTY_RESOURCES_DIR", resources.appendingPathComponent("ghostty").path, 1)
         setenv("GHOSTTY_LOG", "false", 1)
+        // GUI launches from build tools can inherit NO_COLOR=1. This terminal
+        // supports color; explicit Ghostty env settings and shell startup files
+        // are applied later and can still opt out deliberately.
+        unsetenv("NO_COLOR")
         // Pass only the executable name. Never let app arguments become engine configuration.
         let arg = strdup(CommandLine.arguments[0])!
         defer { free(arg) }
@@ -33,7 +58,16 @@ final class GhosttyRuntime {
         }
         guard let config = ghostty_config_new() else { throw TerminalFailure.unavailable("Ghostty configuration allocation failed.") }
         self.config = config
-        resources.appendingPathComponent("terminal.conf").path.withCString { ghostty_config_load_file(config, $0) }
+        var qualification = false
+        #if HARNESS_TESTS
+        qualification = CommandLine.arguments.contains("--self-test") || CommandLine.arguments.contains("--overlay-self-test")
+        #endif
+        // Use Ghostty's own discovery/precedence, including config-file includes.
+        // Automated PTY fixtures must not load personal commands or keybindings.
+        if !qualification {
+            ghostty_config_load_default_files(config)
+            ghostty_config_load_recursive_files(config)
+        }
         ghostty_config_finalize(config)
         guard ghostty_config_diagnostics_count(config) == 0 else {
             var messages: [String] = []
@@ -42,7 +76,7 @@ final class GhosttyRuntime {
             }
             ghostty_config_free(config)
             self.config = nil
-            throw TerminalFailure.unavailable("Bundled terminal configuration is invalid: " + messages.joined(separator: "; "))
+            throw TerminalFailure.unavailable("Ghostty configuration is invalid: " + messages.joined(separator: "; "))
         }
         var callbacks = ghostty_runtime_config_s()
         callbacks.userdata = Unmanaged.passUnretained(self).toOpaque()
@@ -117,6 +151,7 @@ final class GhosttyRuntime {
             throw TerminalFailure.unavailable("Ghostty runtime creation failed.")
         }
         self.app = app
+        ghostty_app_set_color_scheme(app, GHOSTTY_COLOR_SCHEME_DARK)
         ghostty_app_set_focus(app, NSApp.isActive)
         for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification, NSTextInputContext.keyboardSelectionDidChangeNotification] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in

@@ -53,7 +53,6 @@ final class GhosttySession: TerminalSession {
         config.platform.macos.nsview = Unmanaged.passUnretained(nativeView).toOpaque()
         config.userdata = Unmanaged.passUnretained(self).toOpaque()
         config.scale_factor = Double(NSScreen.main?.backingScaleFactor ?? 2)
-        config.font_size = 14
         config.wait_after_command = true
         // Shipping alpha uses the engine's system login-shell discovery. No launch-string injection.
         self.surface = directory.path.withCString { path in

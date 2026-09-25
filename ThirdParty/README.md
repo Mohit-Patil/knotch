@@ -23,17 +23,19 @@ and zig-objc are build inputs; their use in the final linked app still needs a
 link-map audit. macOS frameworks come from the SDK.
 
 The binary embeds JetBrains Mono 2.304 and Nerd Fonts Symbols Only 3.4.0 font
-data via `src/build/SharedDeps.zig` and `src/font/embedded.zig`. The app itself
-chooses Menlo in `Resources/terminal.conf`. Ghostty's other
+data via `src/build/SharedDeps.zig` and `src/font/embedded.zig`. The app loads the same personal configuration files as Ghostty, falling back to
+the pinned engine defaults. Ghostty's other
 `src/font/res` fonts are described upstream as test fixtures; this inventory
 does not assume all those test fonts survive into the production binary.
 
-The app bundle copies only `zig-out/share/ghostty/shell-integration/` from
+The app bundle copies `zig-out/share/ghostty/shell-integration/` and `themes/` from
 Ghostty's resource tree, plus `zig-out/share/terminfo/` (including
 `xterm-ghostty`), the app's `terminal.conf`, `engine-revision.txt`, this README,
-and the available `Notices/` directory. The upstream build also generates 607
-third-party theme files, but `scripts/build.sh` excludes them from Knotch's app
-bundle. `terminal.conf` sets colors directly and does not select a theme.
+and the available `Notices/` directory. The upstream theme files are bundled from the pinned
+`iterm2_themes` dependency (`N-V-__8AAEFmBABuDGOKxAI6VMg41b9euMZ-z7HS9EcUdaor`).
+Its MIT notice is copied from iTerm2-Color-Schemes revision `752a9c0` at
+https://raw.githubusercontent.com/mbadolato/iTerm2-Color-Schemes/752a9c0/LICENSE
+to `Notices/iTerm2-Color-Schemes-LICENSE`.
 
 ## Notice provenance
 

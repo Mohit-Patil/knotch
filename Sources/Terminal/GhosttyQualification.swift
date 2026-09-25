@@ -96,7 +96,8 @@ enum HarnessQualification {
                 NSPasteboard.general.writeObjects(items)
             }
             _ = terminal.nativeView.binding("select_all")
-            _ = terminal.nativeView.binding("copy_to_clipboard")
+            let copyKey = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.command], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: coordinator.window!.windowNumber, context: nil, characters: "c", charactersIgnoringModifiers: "c", isARepeat: false, keyCode: 8)!
+            try check("Ghostty configured copy binding", terminal.nativeView.performKeyEquivalent(with: copyKey), "Native Command-C is resolved through Ghostty bindings")
             let copied = NSPasteboard.general.string(forType: .string) ?? ""
             try check("G0-05 selection/copy", copied.contains("UNICODE_OK:"), "Engine selection copied fixture text through native clipboard callback")
             send("read -r fixture; printf 'PASTE_RESULT:%s\\n' \"$fixture\"\r", to: terminal)
@@ -162,6 +163,9 @@ enum HarnessQualification {
             try await waitFor { !screen(session).isEmpty }
             send("printf '\\033[2J\\033[HOVERLAY_READY\\n'; printf 'SHELL:%s\\n' $$\r", to: session)
             try await waitFor { screen(session).contains("\nSHELL:") }
+            send("printf 'COLOR_ENV:%s:%s:%s\\n' \"${NO_COLOR-unset}\" \"$COLORTERM\" \"$TERM\"\r", to: session)
+            try await waitFor { screen(session).contains("COLOR_ENV:unset:truecolor:xterm-ghostty") }
+            try check("Color-capable child environment", true, "Real PTY child has no inherited NO_COLOR and advertises truecolor with xterm-ghostty")
             let surface = session.surface
             let pid = ghostty_surface_foreground_pid(surface!)
             try await waitFor { !overlay.isAnimating }
