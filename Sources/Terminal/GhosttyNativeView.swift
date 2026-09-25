@@ -30,6 +30,8 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient {
     var onActivate: (() -> Void)?
     var onInput: (() -> Void)?
     var onClipboardDrop: ((UUID) -> Bool)?
+    var onExternalDrop: ((NSPasteboard) -> Bool)?
+    var onExternalDrag: ((Bool) -> Void)?
     /// The panel uses this to hold its presentation while selection or IME input is active.
     var onInteractionLock: ((Bool) -> Void)?
 
@@ -62,7 +64,7 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient {
     }
 
     private func installInputObservers() {
-        registerForDraggedTypes([ClipboardTerminalDrop.pasteboardType])
+        registerForDraggedTypes([ClipboardTerminalDrop.pasteboardType] + ExternalTerminalDrop.draggedTypes)
         // AppKit does not reliably deliver Command key-up through the responder chain.
         keyUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyUp) { [weak self] event in
             MainActor.assumeIsolated {
@@ -167,17 +169,29 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient {
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        ClipboardTerminalDrop.entryID(from: sender.draggingPasteboard) != nil
-            && onClipboardDrop != nil ? .copy : []
+        if ClipboardTerminalDrop.entryID(from: sender.draggingPasteboard) != nil {
+            return onClipboardDrop == nil ? [] : .copy
+        }
+        guard ExternalTerminalDrop.canAccept(sender.draggingPasteboard), onExternalDrop != nil else { return [] }
+        onExternalDrag?(true)
+        return .copy
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        draggingEntered(sender)
+        if ClipboardTerminalDrop.entryID(from: sender.draggingPasteboard) != nil {
+            return onClipboardDrop == nil ? [] : .copy
+        }
+        return ExternalTerminalDrop.canAccept(sender.draggingPasteboard) && onExternalDrop != nil ? .copy : []
     }
 
+    override func draggingExited(_ sender: NSDraggingInfo?) { onExternalDrag?(false) }
+
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        guard let id = ClipboardTerminalDrop.entryID(from: sender.draggingPasteboard) else { return false }
-        return onClipboardDrop?(id) ?? false
+        if let id = ClipboardTerminalDrop.entryID(from: sender.draggingPasteboard) {
+            return onClipboardDrop?(id) ?? false
+        }
+        defer { onExternalDrag?(false) }
+        return onExternalDrop?(sender.draggingPasteboard) ?? false
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {

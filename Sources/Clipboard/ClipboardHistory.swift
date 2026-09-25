@@ -112,6 +112,28 @@ final class ClipboardHistory: ObservableObject {
         lastChangeCount = pasteboard.changeCount
     }
 
+    /// A drop is saved to Knotch's history without replacing the user's
+    /// system clipboard. The returned entry is the one retained after dedupe.
+    func addDropped(_ entry: ClipboardEntry) -> ClipboardEntry? {
+        guard entry.kind == .image || entry.kind == .files else { return nil }
+        if entry.kind == .image {
+            guard let data = entry.data, !data.isEmpty,
+                  data.count <= maximumImageBytes else { return nil }
+        } else {
+            guard let urls = entry.fileURLs, !urls.isEmpty, urls.count <= 20,
+                  urls.allSatisfy(\.isFileURL) else { return nil }
+        }
+        if let index = entries.firstIndex(where: { $0.hasSameContent(as: entry) }) {
+            var existing = entries.remove(at: index)
+            existing.createdAt = Date()
+            entries.insert(existing, at: 0)
+        } else {
+            entries.insert(entry, at: 0)
+        }
+        trimAndSave()
+        return entries.first
+    }
+
     func togglePinned(_ id: UUID) {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[index].pinned.toggle()

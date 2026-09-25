@@ -168,3 +168,9 @@ The [25-check native report](clipboard-drop.json) extends the isolated clipboard
 ## Shared panel size follow-up
 
 Terminal, Clipboard, Settings, and the empty state now use one 720×550-point default panel. A saved custom size applies to every tab and remains bounded by the selected display. The [28-check native report](shared-panel-size.json) includes default Terminal-to-Clipboard size retention, custom dimensions across Clipboard and Settings, unchanged Ghostty surface, and terminal input after those switches. The Settings fixture passed 10 checks and model tests passed. Physical resizing and visual smoothness on all connected displays remain NOT_RUN.
+
+## External screenshot drag follow-up
+
+The [34-check native report](external-screenshot-drop.json) extends the isolated Clipboard fixture. It verifies external PNG detection, drag-triggered reveal, direct image and image-file capture into local history, insertion of the private image path into a real Ghostty shell without Return, and ordinary file path escaping. The same native Ghostty surface remains alive. A synthetic file promise is recognized, but an isolated named pasteboard did not fulfill it; a physical macOS floating-thumbnail drag remains NOT_RUN. Computer-control attempted a Finder-to-notch drag but its server returned `windowNotFoundAtPosition` before delivering the gesture, so it does not establish app behavior.
+
+The 10-check Settings fixture and model tests passed. Release/test builds and signature verification passed; the installed executable hash matched Release. The installed app was restarted and its notch handle visually opened and minimised. That UI check did not perform an external drop.

@@ -24,6 +24,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var clipboardDragActive = false
     private var retainedDragSourceView: NSView?
     private let clipboardImageExport = ClipboardImageExport()
+    private var externalDropFolders: [URL] = []
     private var savedTerminalPanelSize: CGSize?
     private var runningQualification = false
     private var tabHeight: NSLayoutConstraint?
@@ -41,6 +42,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         defer { clipboardDragChanged(false) }
         return acceptClipboardDrop(entryID: entryID, sessionID: sessionID)
     }
+    func acceptExternalDropForFixture(_ board: NSPasteboard) -> Bool { acceptExternalDrop(board) }
     #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -94,6 +96,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             })
             overlay = controller
             window = controller.panel
+            controller.onExternalDrop = { [weak self] board in self?.acceptExternalDrop(board) ?? false }
             controller.onPresentationChange = { [weak self] _ in self?.updateStatus() }
             controller.onTerminalPanelSizeCommit = { [weak self] size in
                 self?.setTerminalPanelSize(size)
@@ -383,6 +386,12 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             ghostty.nativeView.onClipboardDrop = { [weak self] entryID in
                 self?.acceptClipboardDrop(entryID: entryID, sessionID: id) ?? false
             }
+            ghostty.nativeView.onExternalDrop = { [weak self] board in
+                self?.acceptExternalDrop(board) ?? false
+            }
+            ghostty.nativeView.onExternalDrag = { [weak self] entered in
+                self?.overlay?.externalDragChanged(entered)
+            }
         }
         session.onInput = { [weak self] in
             guard let self, !self.settingsSelected, !self.clipboardSelected, self.store.selectedID == id else { return }
@@ -591,6 +600,62 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         selectSession(id: sessionID)
         _ = session.nativeView.insertDroppedText(text)
     }
+
+    @discardableResult
+    private func acceptExternalDrop(_ board: NSPasteboard) -> Bool {
+        guard let content = ExternalTerminalDrop.content(from: board) else {
+            showError(TerminalFailure.unavailable("This dragged image or file could not be read."))
+            return false
+        }
+        switch content {
+        case .files(let urls):
+            if urls.count == 1, let image = ExternalTerminalDrop.image(at: urls[0]) {
+                receiveExternalEntry(image)
+            } else {
+                receiveExternalEntry(ClipboardEntry(kind: .files, fileURLs: urls))
+            }
+        case .image(let data, _):
+            guard let entry = ExternalTerminalDrop.image(from: data) else {
+                showError(TerminalFailure.unavailable("This screenshot exceeds the 4 MB clipboard image limit."))
+                return false
+            }
+            receiveExternalEntry(entry)
+        case .promises(let receivers):
+            guard receivers.count == 1 else { return false }
+            let folder = FileManager.default.temporaryDirectory
+                .appendingPathComponent("Knotch-Screenshot-Drop-\(UUID().uuidString)", isDirectory: true)
+            do {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true,
+                                                        attributes: [.posixPermissions: 0o700])
+                externalDropFolders.append(folder)
+            } catch {
+                showError(error)
+                return false
+            }
+            receivers[0].receivePromisedFiles(atDestination: folder, options: [:], operationQueue: .main) {
+                [weak self] fileURL, error in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    if let error { self.showError(error); return }
+                    guard let data = try? Data(contentsOf: fileURL),
+                          let entry = ExternalTerminalDrop.image(from: data) else {
+                        self.showError(TerminalFailure.unavailable("The screenshot could not be saved as an image under 4 MB."))
+                        return
+                    }
+                    self.receiveExternalEntry(entry)
+                    try? FileManager.default.removeItem(at: fileURL)
+                }
+            }
+        }
+        return true
+    }
+
+    private func receiveExternalEntry(_ candidate: ClipboardEntry) {
+        guard let entry = clipboard?.addDropped(candidate) else { return }
+        if store.session == nil || store.session?.isRunning != true { openHome() }
+        guard let sessionID = store.session?.id else { return }
+        insertClipboardEntry(entry, into: sessionID)
+    }
     @objc func showAccessSettings() {
         if shortcut == nil { shortcut = ShortcutController() }
         guard let shortcut else { return }
@@ -656,6 +721,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         store.closeAllAfterConfirmation()
         clipboardImageExport.cleanUp()
+        for folder in externalDropFolders { try? FileManager.default.removeItem(at: folder) }
         clipboard?.stop()
         shortcut?.shutdown()
         runtime?.shutdown()

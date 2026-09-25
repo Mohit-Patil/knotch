@@ -32,6 +32,68 @@ enum ClipboardTerminalDrop {
     }
 }
 
+/// External drags are decoded while AppKit's drag pasteboard is still valid.
+/// Floating screenshot thumbnails commonly deliver a file promise rather than
+/// a file URL, so keep the receiver alive until it writes the image.
+enum ExternalTerminalDrop {
+    enum Content {
+        case files([URL])
+        case image(Data, NSPasteboard.PasteboardType)
+        case promises([NSFilePromiseReceiver])
+    }
+
+    static var draggedTypes: [NSPasteboard.PasteboardType] {
+        let direct: [NSPasteboard.PasteboardType] = [.fileURL, .png, .tiff]
+        return direct + NSFilePromiseReceiver.readableDraggedTypes.map { NSPasteboard.PasteboardType($0) }
+    }
+
+    static func canAccept(_ board: NSPasteboard) -> Bool {
+        board.availableType(from: draggedTypes) != nil
+    }
+
+    static func content(from board: NSPasteboard) -> Content? {
+        if let urls = board.readObjects(forClasses: [NSURL.self],
+                                        options: [.urlReadingFileURLsOnly: true]) as? [URL],
+           !urls.isEmpty, urls.count <= 20, urls.allSatisfy(\.isFileURL) {
+            return .files(urls)
+        }
+        for type in [NSPasteboard.PasteboardType.png, .tiff] {
+            if let data = board.data(forType: type), !data.isEmpty, data.count <= 4 * 1024 * 1024,
+               NSImage(data: data) != nil {
+                return .image(data, type)
+            }
+        }
+        if let promises = board.readObjects(forClasses: [NSFilePromiseReceiver.self]) as? [NSFilePromiseReceiver],
+           !promises.isEmpty, promises.count <= 20 {
+            return .promises(promises)
+        }
+        return nil
+    }
+
+    static func image(from data: Data) -> ClipboardEntry? {
+        guard !data.isEmpty, data.count <= 4 * 1024 * 1024,
+              let image = NSImage(data: data) else { return nil }
+        if data.starts(with: [0x89, 0x50, 0x4e, 0x47]) {
+            return ClipboardEntry(kind: .image, data: data,
+                                  imageType: NSPasteboard.PasteboardType.png.rawValue)
+        }
+        guard let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let png = bitmap.representation(using: .png, properties: [:]),
+              png.count <= 4 * 1024 * 1024 else { return nil }
+        return ClipboardEntry(kind: .image, data: png,
+                              imageType: NSPasteboard.PasteboardType.png.rawValue)
+    }
+
+    static func image(at url: URL) -> ClipboardEntry? {
+        guard url.isFileURL, !url.hasDirectoryPath,
+              let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              size > 0, size <= 4 * 1024 * 1024,
+              let data = try? Data(contentsOf: url) else { return nil }
+        return image(from: data)
+    }
+}
+
 /// Images have no general terminal-paste encoding. A drop creates a private
 /// temporary image and inserts its shell-escaped path. The directory is removed
 /// when this app process quits, at which point its terminal sessions also end.

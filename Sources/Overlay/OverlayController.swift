@@ -7,6 +7,8 @@ private final class OverlayTrackingView: NSView {
     var onEnter: (() -> Void)?
     var onExit: (() -> Void)?
     var onPress: (() -> Void)?
+    var onExternalDrag: ((Bool) -> Void)?
+    var onExternalDrop: ((NSPasteboard) -> Bool)?
     private var area: NSTrackingArea?
 
     override func updateTrackingAreas() {
@@ -21,6 +23,19 @@ private final class OverlayTrackingView: NSView {
 
     override func mouseEntered(with event: NSEvent) { onEnter?() }
     override func mouseExited(with event: NSEvent) { onExit?() }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard ExternalTerminalDrop.canAccept(sender.draggingPasteboard) else { return [] }
+        onExternalDrag?(true)
+        return .copy
+    }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        ExternalTerminalDrop.canAccept(sender.draggingPasteboard) ? .copy : []
+    }
+    override func draggingExited(_ sender: NSDraggingInfo?) { onExternalDrag?(false) }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        defer { onExternalDrag?(false) }
+        return onExternalDrop?(sender.draggingPasteboard) ?? false
+    }
     override func accessibilityPerformPress() -> Bool {
         onPress?()
         return onPress != nil
@@ -94,6 +109,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
     private var hoverTimer: Timer?
     private var exitTimer: Timer?
     private var activationTimer: Timer?
+    private var externalDragExitTimer: Timer?
     private var activationGeneration: UInt64 = 0
     private var pendingActivation: UInt64?
     private var priorFrontmostPID: pid_t?
@@ -106,6 +122,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
     private(set) var state = OverlayState()
     var onPresentationChange: ((OverlayPresentation) -> Void)?
     var onTerminalPanelSizeCommit: ((CGSize) -> Void)?
+    var onExternalDrop: ((NSPasteboard) -> Bool)?
     #if HARNESS_TESTS
     // Controller fixtures supply a complete pointer trace; do not mix in the
     // owner's real pointer when a test window happens to appear underneath it.
@@ -153,6 +170,11 @@ final class OverlayController: NSObject, NSWindowDelegate {
         triggerView.onPress = { [weak self] in self?.activate() }
         panelRoot.onEnter = { [weak self] in self?.tracked(.pointerEnteredPanel) }
         panelRoot.onExit = { [weak self] in self?.tracked(.pointerExitedPanel) }
+        for view in [triggerView, panelRoot] {
+            view.registerForDraggedTypes(ExternalTerminalDrop.draggedTypes)
+            view.onExternalDrag = { [weak self] entered in self?.externalDragChanged(entered) }
+            view.onExternalDrop = { [weak self] board in self?.onExternalDrop?(board) ?? false }
+        }
         triggerPanel.onPointerDown = { [weak self] in self?.activate() }
         (panel as? OverlayNativePanel)?.onPointerDown = { [weak self] in self?.activate() }
 
@@ -184,9 +206,25 @@ final class OverlayController: NSObject, NSWindowDelegate {
         hoverTimer?.invalidate()
         exitTimer?.invalidate()
         activationTimer?.invalidate()
+        externalDragExitTimer?.invalidate()
     }
 
     func activate() { send(.activate) }
+
+    func externalDragChanged(_ entered: Bool) {
+        externalDragExitTimer?.invalidate()
+        externalDragExitTimer = nil
+        if entered {
+            setInteractionLock("external-drag", true)
+            activate()
+        } else {
+            // The drag destination changes from the notch handle to the
+            // expanding panel; do not collapse in that short handoff.
+            externalDragExitTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
+                Task { @MainActor [weak self] in self?.setInteractionLock("external-drag", false) }
+            }
+        }
+    }
 
     private func tracked(_ event: OverlayEvent) {
         #if HARNESS_TESTS

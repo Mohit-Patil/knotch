@@ -2,6 +2,19 @@
 import AppKit
 import GhosttyKit
 
+private final class ScreenshotPromiseFixture: NSObject, NSFilePromiseProviderDelegate {
+    let data: Data
+    init(data: Data) { self.data = data }
+    func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider,
+                             fileNameForType fileType: String) -> String { "screenshot.png" }
+    func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider,
+                             writePromiseTo url: URL, completionHandler: @escaping (Error?) -> Void) {
+        do { try data.write(to: url); completionHandler(nil) }
+        catch { completionHandler(error) }
+    }
+    func operationQueue(for filePromiseProvider: NSFilePromiseProvider) -> OperationQueue { .main }
+}
+
 @MainActor
 enum ClipboardQualification {
     static func run(coordinator: AppCoordinator) async {
@@ -75,6 +88,14 @@ enum ClipboardQualification {
         check("Unsafe text detection", ClipboardTerminalDrop.needsConfirmation("echo one\necho two")
               && !ClipboardTerminalDrop.needsConfirmation("plain text"),
               "Multiline clipboard text requires confirmation before insertion")
+        let externalBoard = NSPasteboard.withUniqueName()
+        externalBoard.setData(png, forType: .png)
+        check("External screenshot recognized", ExternalTerminalDrop.canAccept(externalBoard)
+              && ExternalTerminalDrop.content(from: externalBoard).map {
+                  if case .image = $0 { return true }; return false
+              } == true,
+              "A macOS image drag is accepted without Knotch's private entry ID")
+        externalBoard.releaseGlobally()
 
         board.clearContents()
         board.writeObjects([folder.appendingPathComponent("fixture.txt") as NSURL])
@@ -199,6 +220,69 @@ enum ClipboardQualification {
             } catch {
                 check("Drop inserts without Return", false, error.localizedDescription)
             }
+            coordinator.overlay?.hide(restoreFocus: false)
+            coordinator.overlay?.settlePresentationForFixture()
+            coordinator.overlay?.externalDragChanged(true)
+            coordinator.overlay?.settlePresentationForFixture()
+            check("External drag opens notch", coordinator.overlay?.state.presentation == .interactive
+                  && coordinator.overlay?.panel.isVisible == true && session.surface == surface,
+                  "Dragging an accepted external item over the notch reveals the existing terminal")
+            let screenshotBoard = NSPasteboard.withUniqueName()
+            screenshotBoard.setData(png, forType: .png)
+            let acceptedScreenshot = coordinator.acceptExternalDropForFixture(screenshotBoard)
+            try? await HarnessQualification.waitFor({
+                HarnessQualification.screen(session).contains("Knotch-Clipboard-Drops-")
+            }, description: "external screenshot path")
+            check("External screenshot reaches Ghostty", acceptedScreenshot
+                  && restored.entries.first?.kind == .image
+                  && HarnessQualification.screen(session).contains("Knotch-Clipboard-Drops-")
+                  && session.surface == surface,
+                  "Accepted=\(acceptedScreenshot), kind=\(String(describing: restored.entries.first?.kind)), screen=\(HarnessQualification.screen(session).suffix(180))")
+            screenshotBoard.releaseGlobally()
+
+            let fileURL = folder.appendingPathComponent("Screenshot 1.png")
+            let filePNG = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==")!
+            try? filePNG.write(to: fileURL)
+            let fileBoard = NSPasteboard.withUniqueName()
+            fileBoard.writeObjects([fileURL as NSURL])
+            let acceptedFile = coordinator.acceptExternalDropForFixture(fileBoard)
+            try? await HarnessQualification.waitFor({
+                restored.entries.first?.data == filePNG
+                    && HarnessQualification.screen(session).contains(restored.entries.first?.id.uuidString ?? "NO_ENTRY")
+            }, description: "dragged screenshot file path")
+            check("External screenshot file reaches Ghostty", acceptedFile
+                  && restored.entries.first?.kind == .image
+                  && restored.entries.first?.data == filePNG
+                  && HarnessQualification.screen(session).contains(restored.entries.first?.id.uuidString ?? "NO_ENTRY"),
+                  "A screenshot file is copied into local history and its private image path is inserted without Return")
+            fileBoard.releaseGlobally()
+
+            let ordinaryFile = folder.appendingPathComponent("notes file.txt")
+            try? Data("ordinary fixture".utf8).write(to: ordinaryFile)
+            let ordinaryBoard = NSPasteboard.withUniqueName()
+            ordinaryBoard.writeObjects([ordinaryFile as NSURL])
+            let acceptedOrdinary = coordinator.acceptExternalDropForFixture(ordinaryBoard)
+            try? await HarnessQualification.waitFor({
+                HarnessQualification.screen(session).contains("notes\\ file.txt")
+            }, description: "ordinary dragged file path")
+            check("Non-image file remains a path", acceptedOrdinary
+                  && restored.entries.first?.kind == .files
+                  && HarnessQualification.screen(session).contains("notes\\ file.txt"),
+                  "Ordinary files keep URL references and insert an escaped path")
+            ordinaryBoard.releaseGlobally()
+
+            let promiseBoard = NSPasteboard.withUniqueName()
+            let promiseDelegate = ScreenshotPromiseFixture(data: filePNG)
+            let provider = NSFilePromiseProvider(fileType: "public.png", delegate: promiseDelegate)
+            promiseBoard.writeObjects([provider])
+            let promiseSupported = ExternalTerminalDrop.canAccept(promiseBoard)
+                && ExternalTerminalDrop.content(from: promiseBoard).map {
+                    if case .promises = $0 { return true }; return false
+                } == true
+            check("Floating screenshot promise recognized", promiseSupported,
+                  "A file promise is recognized; fulfillment requires a live AppKit drag session")
+            promiseBoard.releaseGlobally()
+            coordinator.overlay?.externalDragChanged(false)
             coordinator.overlay?.hide(restoreFocus: false)
             session.view.removeFromSuperview()
             coordinator.store.closeAfterConfirmation(id: session.id)

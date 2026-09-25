@@ -294,7 +294,7 @@ enum HarnessQualification {
                       overlay.layout?.panelFrame.size == CGSize(width: 1000, height: 600)
                         && session.surface == surface
                         && ghostty_surface_foreground_pid(surface) == pid,
-                      "Changing panel size resized the real Ghostty grid without replacing the shell")
+                      "Panel=\(String(describing: overlay.layout?.panelFrame.size)), surface=\(session.surface == surface), PID=\(pid)->\(ghostty_surface_foreground_pid(surface)); changing panel size must resize the real grid without replacing the shell")
             overlay.setUserPanelSize(nil)
             try check("Reset terminal size",
                       overlay.layout?.panelFrame.size != CGSize(width: 1000, height: 600),
