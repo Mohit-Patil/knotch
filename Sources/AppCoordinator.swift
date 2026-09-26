@@ -13,6 +13,11 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let statusLabel = NSTextField(labelWithString: "Terminal")
     private var closeButton: NSButton?
     let container = NSView()
+    private lazy var workspace = TerminalWorkspaceView(content: container)
+    private var shelfView: NSHostingView<ClipboardShelfView>?
+    private var shelfCanInsert = false
+    private var shelfEnabled = true
+    private var shelfButton: NSButton?
     private let tabs = TerminalTabStrip()
     private let settingsID = UUID()
     private let clipboardID = UUID()
@@ -35,6 +40,10 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     #if HARNESS_TESTS
     func useClipboardForFixture(_ history: ClipboardHistory) { clipboard?.stop(); clipboard = history }
     var isClipboardSelectedForFixture: Bool { clipboardSelected }
+    var shelfHeightForFixture: CGFloat { workspace.visibleShelfHeight }
+    var shelfViewForFixture: NSView? { shelfView }
+    func setShelfForFixture(_ visible: Bool) { shelfEnabled = visible; updateWorkspace() }
+    func insertShelfEntryForFixture(_ id: UUID) { insertShelfEntry(id) }
     func hoverClipboardTabForFixture(sessionID: UUID) {
         clipboardDragChanged(true)
         selectSession(id: sessionID)
@@ -63,7 +72,10 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             || CommandLine.arguments.contains("--clipboard-self-test")
         #endif
         runningQualification = qualification || harness
-        if !runningQualification { savedTerminalPanelSize = Self.loadTerminalPanelSize() }
+        if !runningQualification {
+            savedTerminalPanelSize = Self.loadTerminalPanelSize()
+            shelfEnabled = UserDefaults.standard.object(forKey: "clipboard.shelf.v1") as? Bool ?? true
+        }
         // The focus fixture also owns an ordinary editor window; production remains accessory.
         NSApp.setActivationPolicy(harness || qualification ? .regular : .accessory)
         makeMenu()
@@ -180,6 +192,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         appMenu.addItem(withTitle: "Open Project…", action: #selector(chooseProject), keyEquivalent: "o").target = self
         appMenu.addItem(withTitle: "Open Home Shell", action: #selector(openHome), keyEquivalent: "").target = self
         appMenu.addItem(withTitle: "Clipboard", action: #selector(showClipboard), keyEquivalent: "").target = self
+        appMenu.addItem(withTitle: "Toggle Clipboard Shelf", action: #selector(toggleClipboardShelf), keyEquivalent: "").target = self
         appMenu.addItem(withTitle: "Minimise Terminal", action: #selector(hideTerminal), keyEquivalent: "h").target = self
         appMenu.addItem(withTitle: "Close Session…", action: #selector(closeSession), keyEquivalent: "w").target = self
         appMenu.addItem(withTitle: "Settings", action: #selector(showAccessSettings), keyEquivalent: ",").target = self
@@ -235,8 +248,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         for (symbol, title, action) in [
             ("plus", "New Tab", #selector(newTab)),
             ("folder.badge.plus", "New Project Tab…", #selector(chooseProject)),
-            ("doc.on.clipboard", "Clipboard", #selector(showClipboard)),
-            ("gearshape", "Settings", #selector(showAccessSettings)),
+            ("rectangle.bottomthird.inset.filled", "Toggle Clipboard Shelf", #selector(toggleClipboardShelf)),
             ("chevron.up", "Minimise Terminal", #selector(hideTerminal)),
             ("xmark", "Close Session…", #selector(closeSession))
         ] {
@@ -264,6 +276,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             button.widthAnchor.constraint(equalToConstant: 28).isActive = true
             button.heightAnchor.constraint(equalToConstant: 28).isActive = true
             if action == #selector(closeSession) { closeButton = button; button.isEnabled = false }
+            if action == #selector(toggleClipboardShelf) { shelfButton = button }
             toolbar.addArrangedSubview(button)
         }
         tabs.onSelect = { [weak self] id in
@@ -291,7 +304,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         tabHeight = tabs.heightAnchor.constraint(equalToConstant: 0)
         tabHeight?.isActive = true
-        for view in [toolbar, tabs, container] { view.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(view) }
+        for view in [toolbar, tabs, workspace] { view.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(view) }
         NSLayoutConstraint.activate([
             terminalIcon.widthAnchor.constraint(equalToConstant: 18),
             statusLabel.widthAnchor.constraint(lessThanOrEqualTo: root.widthAnchor, multiplier: 0.28),
@@ -302,10 +315,10 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             tabs.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 6),
             tabs.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             tabs.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            container.topAnchor.constraint(equalTo: tabs.bottomAnchor),
-            container.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            container.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            container.bottomAnchor.constraint(equalTo: root.bottomAnchor)
+            workspace.topAnchor.constraint(equalTo: tabs.bottomAnchor),
+            workspace.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            workspace.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            workspace.bottomAnchor.constraint(equalTo: root.bottomAnchor)
         ])
         showEmptyState()
         return root
@@ -346,6 +359,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func updateStatus() {
+        updateWorkspace()
         tabs.isHidden = false
         tabHeight?.constant = 38
         var items: [TerminalTabStrip.Item] = store.sessions.map {
@@ -384,7 +398,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         clipboardSelected = false
         settingsView?.removeFromSuperview()
         settingsView = nil
-        if clipboardDragActive {
+        if clipboardDragActive, let clipboardView {
             // AppKit's drag source must stay attached to its window until the
             // session ends. Cover it behind Ghostty so transparent terminal
             // backgrounds never expose the Clipboard view during the drop.
@@ -587,13 +601,63 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func clipboardDragChanged(_ dragging: Bool) {
         clipboardDragActive = dragging
+        workspace.preservesDragSource = dragging
         overlay?.setInteractionLock("clipboard-drag", dragging)
         if !dragging {
             dragBackdropView?.removeFromSuperview()
             dragBackdropView = nil
             retainedDragSourceView?.removeFromSuperview()
             retainedDragSourceView = nil
+            updateWorkspace()
         }
+    }
+
+    @objc func toggleClipboardShelf() {
+        if settingsSelected || clipboardSelected {
+            shelfEnabled = true
+            if let session = store.session { selectSession(id: session.id) }
+            else { return }
+        } else {
+            shelfEnabled.toggle()
+        }
+        if !runningQualification { UserDefaults.standard.set(shelfEnabled, forKey: "clipboard.shelf.v1") }
+        updateWorkspace()
+    }
+
+    /// Changing the shelf resizes the existing terminal once; it does not
+    /// select a session or redirect keyboard focus away from a shelf control.
+    private func updateWorkspace() {
+        if let clipboard {
+            let canInsert = store.session?.isRunning == true
+            if shelfView == nil || (canInsert != shelfCanInsert && !clipboardDragActive) {
+                let content = ClipboardShelfView(history: clipboard, canInsert: canInsert,
+                    onInsert: { [weak self] id in self?.insertShelfEntry(id) },
+                    onOpenLibrary: { [weak self] in self?.showClipboard() },
+                    onHide: { [weak self] in self?.toggleClipboardShelf() },
+                    onDragChange: { [weak self] in self?.clipboardDragChanged($0) })
+                if let shelfView { shelfView.rootView = content }
+                else {
+                    let view = NSHostingView(rootView: content)
+                    shelfView = view
+                    workspace.installShelf(view)
+                }
+                shelfCanInsert = canInsert
+            }
+        }
+        let terminalMode = !settingsSelected && !clipboardSelected
+        workspace.showsShelf = terminalMode && shelfEnabled
+        shelfButton?.isEnabled = terminalMode || store.session != nil
+        shelfButton?.contentTintColor = terminalMode && shelfEnabled ? .controlAccentColor : .secondaryLabelColor
+        shelfButton?.toolTip = terminalMode && shelfEnabled ? "Hide Clipboard shelf" : "Show Clipboard beside terminal"
+        window?.layoutIfNeeded()
+        workspace.layoutSubtreeIfNeeded()
+    }
+
+    private func insertShelfEntry(_ id: UUID) {
+        guard !settingsSelected, !clipboardSelected,
+              let entry = clipboard?.entries.first(where: { $0.id == id }),
+              let session = store.session, session.isRunning else { return }
+        insertClipboardEntry(entry, into: session.id)
     }
 
     private func acceptClipboardDrop(entryID: UUID, sessionID: UUID) -> Bool {

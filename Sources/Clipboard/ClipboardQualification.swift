@@ -171,15 +171,111 @@ enum ClipboardQualification {
             coordinator.store.adoptFixture(session)
             coordinator.attach(session)
             let surface = session.surface
+            coordinator.overlay?.setUserPanelSize(CGSize(width: 720, height: 550))
+            coordinator.overlay?.activate()
+            coordinator.overlay?.settlePresentationForFixture()
+            NSApp.activate()
+            coordinator.overlay?.panel.makeKeyAndOrderFront(nil)
+            try? await HarnessQualification.waitFor({
+                coordinator.overlay?.panel.isKeyWindow == true
+                    && coordinator.overlay?.panel.firstResponder === session.view
+            }, timeout: 3, description: "shelf panel activation and terminal focus")
+            try? await HarnessQualification.waitFor({
+                !HarnessQualification.screen(session).isEmpty
+                    && surface.map { ghostty_surface_foreground_pid($0) > 0 } == true
+            }, description: "shelf fixture shell")
+            let shellPID = surface.map { ghostty_surface_foreground_pid($0) }
+            coordinator.setShelfForFixture(true)
+            let shelfPanelFrame = coordinator.overlay?.layout?.panelFrame
+            let shelfSource = coordinator.shelfViewForFixture
+            let shelfHeight = coordinator.shelfHeightForFixture
+            let shelfTerminalHeight = session.view.frame.height
+            let shelfRows = surface.map { ghostty_surface_size($0).rows }
+            check("Shelf shares live terminal", shelfHeight == 174
+                  && shelfSource?.window === coordinator.overlay?.panel
+                  && session.view.superview === coordinator.container
+                  && session.surface == surface
+                  && coordinator.store.selectedID == session.id
+                  && coordinator.overlay?.panel.firstResponder === session.view,
+                  "The clipboard shelf and selected Ghostty surface occupy the same active panel")
+
+            coordinator.setShelfForFixture(false)
+            if let surface {
+                try? await HarnessQualification.waitFor({ ghostty_surface_size(surface).rows > (shelfRows ?? 0) },
+                                                        description: "terminal grid after hiding shelf")
+            }
+            let fullTerminalHeight = session.view.frame.height
+            let fullRows = surface.map { ghostty_surface_size($0).rows }
+            check("Shelf toggle restores terminal space", coordinator.shelfHeightForFixture == 0
+                  && fullTerminalHeight > shelfTerminalHeight
+                  && (fullRows ?? 0) > (shelfRows ?? 0)
+                  && coordinator.overlay?.layout?.panelFrame == shelfPanelFrame
+                  && session.surface == surface
+                  && coordinator.overlay?.panel.firstResponder === session.view,
+                  "Hiding the shelf enlarges the real terminal grid without changing panel, surface, or responder")
+
+            coordinator.setShelfForFixture(true)
+            if let surface {
+                try? await HarnessQualification.waitFor({ ghostty_surface_size(surface).rows < (fullRows ?? 0) },
+                                                        description: "terminal grid after reopening shelf")
+            }
+            check("Shelf reopens on same surface", coordinator.shelfHeightForFixture == 174
+                  && session.view.frame.height == shelfTerminalHeight
+                  && surface.map { ghostty_surface_size($0).rows } == shelfRows
+                  && coordinator.shelfViewForFixture === shelfSource
+                  && coordinator.overlay?.panel.firstResponder === session.view
+                  && session.surface == surface,
+                  "Reopening the shelf restores the prior terminal grid and keeps its source and focus")
+            coordinator.attach(session)
+            check("Shelf source survives session attach", coordinator.shelfViewForFixture === shelfSource
+                  && coordinator.shelfHeightForFixture == 174
+                  && session.surface == surface
+                  && surface.map { ghostty_surface_foreground_pid($0) } == shellPID,
+                  "Reattaching the selected session does not replace the shelf or shell process")
+
+            let shelfMarker = folder.appendingPathComponent("shelf-must-not-run")
+            let shelfCommand = "touch shelf-must-not-run"
+            board.clearContents()
+            board.setString(shelfCommand, forType: .string)
+            restored.captureChange()
+            if let shelfEntryID = restored.entries.first?.id {
+                coordinator.insertShelfEntryForFixture(shelfEntryID)
+            }
+            do {
+                try await HarnessQualification.waitFor({ HarnessQualification.screen(session).contains(shelfCommand) },
+                                                       description: "shelf insertion")
+                check("Shelf inserts without Return", !FileManager.default.fileExists(atPath: shelfMarker.path)
+                      && session.surface == surface
+                      && coordinator.store.selectedID == session.id,
+                      "The shelf inserts into the selected live shell without executing the command")
+            } catch {
+                check("Shelf inserts without Return", false, error.localizedDescription)
+            }
+
+            coordinator.overlay?.setUserPanelSize(CGSize(width: 520, height: 280))
+            coordinator.window?.layoutIfNeeded()
+            check("Small panel hides shelf", coordinator.shelfHeightForFixture == 0
+                  && coordinator.overlay?.layout?.panelFrame.size == CGSize(width: 520, height: 280)
+                  && session.surface == surface,
+                  "A 520 × 280 panel gives its content area to the terminal")
+            coordinator.overlay?.setUserPanelSize(CGSize(width: 720, height: 550))
+            coordinator.window?.layoutIfNeeded()
+            check("Shelf returns after resize", coordinator.shelfHeightForFixture == 174
+                  && coordinator.shelfViewForFixture === shelfSource
+                  && session.surface == surface,
+                  "Restoring panel size reveals the same shelf beside the same terminal")
             let sharedSize = coordinator.overlay?.layout?.panelFrame.size
             coordinator.showClipboard()
             check("Shared Clipboard panel size", coordinator.overlay?.layout?.panelFrame.size == sharedSize,
                   "Switching from Terminal to Clipboard retains the same panel dimensions")
             check("Clipboard tab keeps shell", coordinator.statusLabel.stringValue == "Clipboard"
-                  && session.surface == surface && session.view.superview == nil,
+                  && session.surface == surface && session.view.superview == nil
+                  && coordinator.shelfHeightForFixture == 0,
                   "Selecting Clipboard detaches but does not destroy the Ghostty surface")
             coordinator.selectSession(id: session.id)
-            check("Return to shell", session.surface == surface && session.view.superview === coordinator.container,
+            check("Return to shell", session.surface == surface && session.view.superview === coordinator.container
+                  && coordinator.shelfHeightForFixture == 174
+                  && coordinator.shelfViewForFixture === shelfSource,
                   "Returning from Clipboard presents the same terminal view")
             coordinator.overlay?.setUserPanelSize(CGSize(width: 900, height: 600))
             let customSize = coordinator.overlay?.layout?.panelFrame.size
@@ -189,7 +285,13 @@ enum ClipboardQualification {
             coordinator.showAccessSettings()
             check("Custom size shared with Settings", coordinator.overlay?.layout?.panelFrame.size == customSize,
                   "Settings uses the same custom dimensions as Terminal and Clipboard")
+            check("Settings hides shelf", coordinator.shelfHeightForFixture == 0
+                  && session.surface == surface && coordinator.shelfViewForFixture === shelfSource,
+                  "Settings takes the full content area while the shelf and shell remain owned")
             coordinator.selectSession(id: session.id)
+            check("Settings return restores shelf", coordinator.shelfHeightForFixture == 174
+                  && coordinator.shelfViewForFixture === shelfSource && session.surface == surface,
+                  "Returning to Terminal shows the same clipboard shelf and live shell")
             coordinator.overlay?.setUserPanelSize(nil)
             let marker = folder.appendingPathComponent("drop-must-not-run")
             let command = "touch \(marker.path)"

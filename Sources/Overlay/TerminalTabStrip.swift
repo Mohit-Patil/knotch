@@ -3,7 +3,7 @@ import AppKit
 /// Pure presentation: the session store owns every terminal independently of this strip.
 @MainActor
 final class TerminalTabStrip: NSView, NSMenuDelegate {
-    struct Item {
+    struct Item: Equatable {
         let id: UUID
         let title: String
         let directory: String
@@ -80,8 +80,15 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
     var onMenuLock: ((Bool) -> Void)?
     private let scroll = NSScrollView()
     private let document = NSView()
+    private let utilityGroup = NSView()
+    private let utilityDivider = NSView()
     private var selectedView: NSView?
     private var selectedID: UUID?
+    private var displayedItems: [Item] = []
+    private var sessionContentWidth: CGFloat = 0
+    private var shouldRevealSelection = false
+    private let utilityWidth: CGFloat = 202
+    private let sessionWidth: CGFloat = 150
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -92,23 +99,36 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
         scroll.scrollerStyle = .overlay
         scroll.documentView = document
         addSubview(scroll)
+        utilityDivider.wantsLayer = true
+        utilityDivider.layer?.backgroundColor = NSColor(white: 0.3, alpha: 1).cgColor
+        utilityGroup.addSubview(utilityDivider)
+        addSubview(utilityGroup)
         setAccessibilityLabel("Terminal tabs")
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func update(_ items: [Item], selected: UUID?) {
+        // Pointer/lock updates frequently refresh chrome. Keep the existing
+        // drop targets attached when their actual content has not changed.
+        guard displayedItems != items || selectedID != selected else { return }
+        displayedItems = items
         let changedSelection = selectedID != selected
         selectedID = selected
         document.subviews.forEach { $0.removeFromSuperview() }
+        utilityGroup.subviews.filter { $0 !== utilityDivider }.forEach { $0.removeFromSuperview() }
         selectedView = nil
-        var x: CGFloat = 10
+        var sessionX: CGFloat = 4
         for item in items {
+            let isUtility = item.isSettings || item.isClipboard
             let active = item.id == selected
-            let cell = NSView(frame: NSRect(x: x, y: 5, width: 200, height: 28))
+            let width: CGFloat = item.isClipboard ? 104 : (item.isSettings ? 80 : sessionWidth)
+            let x: CGFloat = item.isClipboard ? 8 : (item.isSettings ? 116 : sessionX)
+            let cell = NSView(frame: NSRect(x: x, y: 5, width: width, height: 28))
             cell.wantsLayer = true
             cell.layer?.cornerRadius = 7
             cell.layer?.backgroundColor = NSColor(white: active ? 0.17 : 0.07, alpha: 1).cgColor
-            let button = TabButton(frame: NSRect(x: 8, y: 0, width: 162, height: 28))
+            let buttonWidth = isUtility ? width - 16 : width - 36
+            let button = TabButton(frame: NSRect(x: 8, y: 0, width: buttonWidth, height: 28))
             button.sessionID = item.id
             button.title = item.title
             button.font = .systemFont(ofSize: 12, weight: active ? .medium : .regular)
@@ -125,7 +145,7 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
             button.setAccessibilityLabel("\(item.title), \(status)\(active ? ", selected" : "")")
             button.target = self
             button.action = #selector(selectTab(_:))
-            if !item.isSettings && !item.isClipboard {
+            if !isUtility {
                 button.registerForDraggedTypes([ClipboardTerminalDrop.pasteboardType]
                                                + ExternalTerminalDrop.draggedTypes)
                 button.onClipboardHover = { [weak self] in self?.onClipboardHover?(item.id) }
@@ -137,8 +157,8 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
                     self?.onExternalDrop?(board, item.id) ?? false
                 }
             }
-            if !item.isSettings && !item.isClipboard { button.onRename = { [weak self] in self?.onRename?(item.id) } }
-            if !item.isSettings && !item.isClipboard {
+            if !isUtility { button.onRename = { [weak self] in self?.onRename?(item.id) } }
+            if !isUtility {
                 let menu = NSMenu()
                 menu.delegate = self
                 for (title, action) in [("Rename Tab…", #selector(renameTab(_:))), ("Close Tab…", #selector(closeTab(_:)))] {
@@ -150,8 +170,8 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
                 button.menu = menu
             }
             cell.addSubview(button)
-            if !item.isSettings && !item.isClipboard {
-                let close = TabButton(frame: NSRect(x: 174, y: 2, width: 24, height: 24))
+            if !isUtility {
+                let close = TabButton(frame: NSRect(x: width - 26, y: 2, width: 22, height: 24))
                 close.sessionID = item.id
                 close.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close tab")
                 close.isBordered = false
@@ -162,17 +182,48 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
                 close.action = #selector(closeTab(_:))
                 cell.addSubview(close)
             }
-            document.addSubview(cell)
-            if active { selectedView = cell }
-            x += 206
+            if active {
+                let underline = NSView(frame: NSRect(x: 8, y: 0, width: width - 16, height: 2))
+                underline.wantsLayer = true
+                underline.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.85).cgColor
+                cell.addSubview(underline)
+            }
+            if isUtility { utilityGroup.addSubview(cell) }
+            else {
+                document.addSubview(cell)
+                if active { selectedView = cell }
+                sessionX += sessionWidth + 6
+            }
         }
-        document.frame = NSRect(x: 0, y: 0, width: max(bounds.width, x + 4), height: 38)
+        sessionContentWidth = max(0, sessionX - 2)
+        shouldRevealSelection = shouldRevealSelection || changedSelection
         needsLayout = true
-        if changedSelection, let selectedView { document.scrollToVisible(selectedView.frame) }
     }
     override func layout() {
         super.layout()
-        scroll.frame = bounds
+        let scrollWidth = max(0, bounds.width - utilityWidth)
+        let viewportChanged = scroll.frame.width != scrollWidth
+        scroll.frame = NSRect(x: 0, y: 0, width: scrollWidth, height: bounds.height)
+        utilityGroup.frame = NSRect(x: scrollWidth, y: 0, width: utilityWidth, height: bounds.height)
+        utilityDivider.frame = NSRect(x: 0, y: 8, width: 1, height: max(0, bounds.height - 16))
+        document.frame = NSRect(x: 0, y: 0,
+                                width: max(scroll.contentSize.width, sessionContentWidth), height: bounds.height)
+        if shouldRevealSelection || viewportChanged { revealSelectedTab() }
+        shouldRevealSelection = false
+    }
+
+    private func revealSelectedTab() {
+        guard let selectedView else { return }
+        let visible = scroll.contentView.bounds
+        var targetX = visible.minX
+        if selectedView.frame.minX < visible.minX + 8 {
+            targetX = selectedView.frame.minX - 8
+        } else if selectedView.frame.maxX > visible.maxX - 8 {
+            targetX = selectedView.frame.maxX - visible.width + 8
+        } else { return }
+        targetX = min(max(0, targetX), max(0, document.frame.width - visible.width))
+        scroll.contentView.scroll(to: NSPoint(x: targetX, y: 0))
+        scroll.reflectScrolledClipView(scroll.contentView)
     }
     @objc private func selectTab(_ sender: TabButton) {
         if let id = sender.sessionID { onSelect?(id) }
