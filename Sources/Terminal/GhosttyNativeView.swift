@@ -9,7 +9,7 @@ import GhosttyKit
 /// AppKit's input and render host for a surface owned by the session store.
 /// The owner must clear `surface` before freeing the native surface. All access is on the main thread.
 @MainActor
-final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient {
+final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient, NSMenuItemValidation {
     var surface: ghostty_surface_t? {
         didSet {
             guard surface != oldValue else { return }
@@ -27,6 +27,10 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient {
         }
     }
 
+    var hoveredLink: String?
+    #if HARNESS_TESTS
+    var browserOpenerForFixture: ((URL) -> Bool)?
+    #endif
     var onActivate: (() -> Void)?
     var onInput: (() -> Void)?
     var onClipboardDrop: ((UUID) -> Bool)?
@@ -153,6 +157,78 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient {
         return action.withCString {
             ghostty_surface_binding_action(surface, $0, UInt(action.utf8.count))
         }
+    }
+
+    var selectedText: String? {
+        guard let surface else { return nil }
+        var result = ghostty_text_s()
+        guard ghostty_surface_read_selection(surface, &result) else { return nil }
+        defer { ghostty_surface_free_text(surface, &result) }
+        guard let bytes = result.text else { return nil }
+        return String(decoding: UnsafeRawBufferPointer(start: bytes, count: Int(result.text_len)), as: UTF8.self)
+    }
+
+    static func browserURL(_ text: String) -> URL? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.utf8.count <= 16_384, !trimmed.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { return nil }
+        let value = trimmed.hasPrefix("www.") ? "https://" + trimmed : trimmed
+        guard let url = URL(string: value), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              let host = url.host, !host.isEmpty else { return nil }
+        return url
+    }
+
+    @discardableResult
+    func openBrowserURL(_ value: String) -> Bool {
+        guard isPresented, window?.isKeyWindow == true, let url = Self.browserURL(value) else { return false }
+        onInput?()
+        #if HARNESS_TESTS
+        if let browserOpenerForFixture { return browserOpenerForFixture(url) }
+        #endif
+        return NSWorkspace.shared.open(url)
+    }
+
+    @objc private func openContextLink(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String else { return }
+        if !openBrowserURL(value) { NSSound.beep() }
+    }
+    @objc private func copyContextLink(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String else { return }
+        onInput?()
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(copy(_:)) { return surface.map(ghostty_surface_has_selection) ?? false }
+        return surface != nil
+    }
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let surface, event.type == .rightMouseDown || (event.type == .leftMouseDown && event.modifierFlags.contains(.control)),
+              !ghostty_surface_mouse_captured(surface) else { return nil }
+        onActivate?()
+        window?.makeFirstResponder(self)
+        syncFocus()
+        onInput?()
+        // Ask Ghostty's own link matcher at this position, with its normal link modifier.
+        // Capture the URL now: opening the menu moves the pointer off the terminal.
+        let local = convert(event.locationInWindow, from: nil)
+        hoveredLink = nil
+        ghostty_surface_mouse_pos(surface, -1, -1, Self.mods(event.modifierFlags))
+        ghostty_surface_mouse_pos(surface, local.x, bounds.height - local.y, Self.mods(event.modifierFlags.union(.command)))
+        let link = hoveredLink.flatMap(Self.browserURL) ?? selectedText.flatMap(Self.browserURL)
+        ghostty_surface_mouse_pos(surface, local.x, bounds.height - local.y, Self.mods(event.modifierFlags))
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Copy", action: #selector(copy(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Paste", action: #selector(paste(_:)), keyEquivalent: "").target = self
+        if let link {
+            menu.addItem(.separator())
+            let copyLink = menu.addItem(withTitle: "Copy Link", action: #selector(copyContextLink(_:)), keyEquivalent: "")
+            copyLink.target = self
+            copyLink.representedObject = link.absoluteString
+            let openLink = menu.addItem(withTitle: "Open in Browser", action: #selector(openContextLink(_:)), keyEquivalent: "")
+            openLink.target = self
+            openLink.representedObject = link.absoluteString
+        }
+        return menu
     }
 
     @objc func copy(_ sender: Any?) { onInput?(); binding("copy_to_clipboard") }
@@ -531,8 +607,13 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient {
         onInteractionLock?(hasMarkedText())
     }
     override func rightMouseDown(with event: NSEvent) {
+        guard let surface else { return }
+        onActivate?()
+        window?.makeFirstResponder(self)
+        syncFocus()
         mousePosition(event)
-        mouseButton(event, state: GHOSTTY_MOUSE_PRESS, button: GHOSTTY_MOUSE_RIGHT)
+        if ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT, Self.mods(event.modifierFlags)) { return }
+        super.rightMouseDown(with: event)
     }
     override func rightMouseUp(with event: NSEvent) {
         mouseButton(event, state: GHOSTTY_MOUSE_RELEASE, button: GHOSTTY_MOUSE_RIGHT)

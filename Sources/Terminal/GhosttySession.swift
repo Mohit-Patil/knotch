@@ -293,14 +293,16 @@ final class GhosttySession: TerminalSession {
         case GHOSTTY_ACTION_SET_TAB_TITLE:
             setEngineTitle(action.action.set_tab_title.title, forTab: true)
             return true
-        case GHOSTTY_ACTION_OPEN_URL:
-            // Only honor an intentional terminal click while this surface owns focus.
-            guard nativeView.window?.isKeyWindow == true,
-                  let ptr = action.action.open_url.url else { return false }
-            let value = String(decoding: UnsafeRawBufferPointer(start: ptr, count: Int(action.action.open_url.len)), as: UTF8.self)
-            guard let url = URL(string: value), ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return false }
-            NSWorkspace.shared.open(url)
+        case GHOSTTY_ACTION_MOUSE_OVER_LINK:
+            let link = action.action.mouse_over_link
+            nativeView.hoveredLink = link.url.map {
+                String(decoding: UnsafeRawBufferPointer(start: $0, count: min(Int(link.len), 16_384)), as: UTF8.self)
+            }
             return true
+        case GHOSTTY_ACTION_OPEN_URL:
+            guard let ptr = action.action.open_url.url, action.action.open_url.len <= 16_384 else { return false }
+            let value = String(decoding: UnsafeRawBufferPointer(start: ptr, count: Int(action.action.open_url.len)), as: UTF8.self)
+            return nativeView.openBrowserURL(value)
         case GHOSTTY_ACTION_PWD,
              GHOSTTY_ACTION_CELL_SIZE, GHOSTTY_ACTION_INITIAL_SIZE, GHOSTTY_ACTION_SIZE_LIMIT,
              GHOSTTY_ACTION_COLOR_CHANGE, GHOSTTY_ACTION_CONFIG_CHANGE,

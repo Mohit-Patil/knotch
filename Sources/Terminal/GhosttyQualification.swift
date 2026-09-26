@@ -426,6 +426,58 @@ enum HarnessQualification {
             try check("Notification preference off", notifications.notices.isEmpty, "Disabled notifications do not create indicators")
             notifications.enabled = true
             notifications.clear()
+            coordinator.selectSession(id: session.id)
+            overlay.settlePresentationForFixture()
+            let savedPasteboard = NSPasteboard.general.pasteboardItems?.map { item in
+                item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }
+            } ?? []
+            defer {
+                NSPasteboard.general.clearContents()
+                let items = savedPasteboard.map { pairs in
+                    let item = NSPasteboardItem()
+                    for (type, data) in pairs { item.setData(data, forType: type) }
+                    return item
+                }
+                NSPasteboard.general.writeObjects(items)
+            }
+            send("printf '\\033[2J\\033[H\\033]8;;https://example.com/knotch-test\\007Open test link\\033]8;;\\007\\n'\r", to: session)
+            try await waitFor({ screen(session).contains("Open test link") }, description: "OSC 8 hyperlink fixture")
+            let linkPosition = session.nativeView.convert(NSPoint(x: 25, y: session.nativeView.bounds.height - 10), to: nil)
+            let contextEvent = NSEvent.mouseEvent(with: .rightMouseDown, location: linkPosition,
+                modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: overlay.panel.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!
+            guard let contextMenu = session.nativeView.menu(for: contextEvent),
+                  let openLink = contextMenu.items.first(where: { $0.title == "Open in Browser" }),
+                  let copyLink = contextMenu.items.first(where: { $0.title == "Copy Link" }) else {
+                throw TerminalFailure.unavailable("Native hyperlink context actions missing")
+            }
+            try check("Native hyperlink context menu", openLink.representedObject as? String == "https://example.com/knotch-test",
+                      "Right-click obtains the actual OSC 8 target through Ghostty, not the displayed label")
+            _ = NSApp.sendAction(copyLink.action!, to: copyLink.target, from: copyLink)
+            try check("Native Copy Link", NSPasteboard.general.string(forType: .string) == "https://example.com/knotch-test",
+                      "The menu's real target/action writes the hyperlink destination to the system pasteboard")
+            var openedURL: URL?
+            session.nativeView.browserOpenerForFixture = { openedURL = $0; return true }
+            _ = NSApp.sendAction(openLink.action!, to: openLink.target, from: openLink)
+            try check("Native Open in Browser routing", openedURL?.absoluteString == "https://example.com/knotch-test",
+                      "The real menu target/action reaches the injected OS-opening boundary with the right URL; no browser was launched in this fixture")
+            session.nativeView.browserOpenerForFixture = nil
+            _ = session.nativeView.binding("select_all")
+            let copyItem = contextMenu.items.first { $0.title == "Copy" }!
+            _ = NSApp.sendAction(copyItem.action!, to: copyItem.target, from: copyItem)
+            try check("Native context Copy selection", NSPasteboard.general.string(forType: .string)?.contains("Open test link") == true,
+                      "The context Copy action uses Ghostty's native selection and clipboard callback")
+            send("printf '\\033]52;c;S05PVENIX0NMSVBCT0FSRF9GSVhUVVJF\\007'\r", to: session)
+            try await waitFor({ NSPasteboard.general.string(forType: .string) == "KNOTCH_CLIPBOARD_FIXTURE" }, description: "agent OSC 52 clipboard write")
+            try check("Agent OSC 52 copy", true, "A real programmatic clipboard escape reaches the macOS pasteboard with the engine's default allow policy")
+            send("printf KNOTCH_PBCOPY_FIXTURE | /usr/bin/pbcopy\r", to: session)
+            try await waitFor({ NSPasteboard.general.string(forType: .string) == "KNOTCH_PBCOPY_FIXTURE" }, description: "shell pbcopy")
+            try check("Shell pbcopy", true, "A subprocess in the embedded PTY can write the macOS pasteboard")
+            try check("Browser URL bounds", GhosttyNativeView.browserURL("javascript:alert(1)") == nil
+                      && GhosttyNativeView.browserURL("file:///tmp/test") == nil
+                      && GhosttyNativeView.browserURL("https://") == nil
+                      && GhosttyNativeView.browserURL("http://localhost:3000") != nil,
+                      "HTTP(S) links including localhost are supported; script, file and incomplete URLs are rejected")
             coordinator.overlay?.hide(restoreFocus: false)
             session.view.removeFromSuperview()
             coordinator.store.closeAfterConfirmation(id: session.id)

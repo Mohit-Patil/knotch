@@ -91,3 +91,7 @@ History is stored only on this Mac under Knotch's private Application Support di
 Agent terminal notifications now emerge as a small spring-animated droplet beside the notch and remain until opened or dismissed. Click one to return to its original terminal. **Settings → Agent notifications** controls the side and provides **Preview motion**. Incoming events do not steal keyboard focus or open the full workspace.
 
 For response-completion signals, Settings can copy Claude and Codex launch commands with notifications enabled; paste one into a Knotch terminal. Existing global agent settings stay untouched. Programs must emit a notification—Knotch does not guess completion from silence or a terminal bell. [Detection, setup and test boundaries](docs/decisions/0019-agent-notification-droplet.md).
+
+### Copy and browser links in the terminal
+
+Select terminal text and use **Command-C** or **Edit → Copy**. Right-click opens a native **Copy/Paste** menu when the terminal application is not capturing the mouse. Over a detected web link it also offers **Copy Link** and **Open in Browser**; OSC 8 labels use their real hyperlink destination. Mouse-capturing applications retain their own mouse behavior. [Implementation and test scope](docs/decisions/0020-terminal-copy-and-links.md).

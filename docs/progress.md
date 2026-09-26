@@ -173,3 +173,9 @@ Added a persistent spring-animated native notification beside either side of the
 Release and test builds pass. [32 Settings/notification checks](test-results/notification-settings.json) and [49 overlay checks](test-results/notification-overlay.json) pass. Actual PTY escape sequences exercised both formats, retained-session click routing, no focus theft, modal suspension and queue cleanup. `scripts/test-notifications.sh` passed real constant hook execution and shell-quoting checks without launching an agent.
 
 Installed and restarted `/Applications/Knotch.app`, verified signature and matching executable hash. Native UI inspection confirmed settings controls and the preview capsule staying visible after collapse, then dismissing. No paid agent turn, physical frame-pacing measurement, OS Reduce Motion toggle or physical display rearrangement was performed. [Install receipt](test-results/notification-install.json).
+
+## Terminal Copy and Open in Browser — September 26
+
+Fixed unconsumed right-click fallback, native Copy/Paste and hyperlink menus, Ghostty hover-link metadata, deliberate right-click activation, and the Edit responder-chain menu. Both Release/test builds pass. [39 native checks](test-results/terminal-copy-links.json) pass, including real OSC 8 menu actions, selection copy, OSC 52 programmatic copy, shell pbcopy and bounded HTTP(S) browser routing.
+
+Installed and signature-verified the Release build. In the shipping UI, right-clicking a real terminal hyperlink displayed the native actions; selecting Open in Browser opened Chrome at the expected Example Domain page. Test browser tab and shell were removed, pin disabled, and the app left running collapsed. [Installation and limits](test-results/terminal-copy-links-install.json). Authenticated agent-specific copy/login flows were not exercised.

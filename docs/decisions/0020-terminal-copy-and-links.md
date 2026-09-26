@@ -1,0 +1,9 @@
+# Terminal copy and browser actions
+
+The owner reported that Copy and Open in Browser failed inside the terminal/coding agent. Inspection found that Knotch discarded Ghostty's right-mouse-button consumption result and never fell back to an AppKit context menu. It also ignored Ghostty's mouse-over-link callback. The fix follows the pinned upstream AppKit host: when the terminal application does not consume a right-click, AppKit presents a native menu. Mouse-capturing terminal applications retain their own right-click behavior.
+
+The menu provides Copy and Paste; Copy is enabled only with a selection. Over a Ghostty-detected HTTP(S) hyperlink, it also offers Copy Link and Open in Browser. The destination is captured when the menu opens, so moving onto a menu item does not lose it. OSC 8 links use their real destination, not their display label. A selected HTTP(S) URL is a fallback. Link detection refreshes at the pointer through Ghostty's matcher, including when the pointer was already over a link.
+
+Right-click deliberately activates the terminal before using the menu. Browser opening remains limited to a presented, key terminal and valid HTTP(S) URLs with a host, including localhost. It does not execute arbitrary schemes or silently open URLs emitted as ordinary output. Ghostty click-to-open and the context menu share the same opener. The app now also has the standard Edit → Copy/Paste responder-chain menu, while existing Ghostty-configured keybindings keep their first opportunity to handle shortcuts.
+
+The native qualification emits a real OSC 8 hyperlink and tests the menu's target/actions against the macOS clipboard and an injected browser-opening boundary. Separate actual PTY tests exercise OSC 52 programmatic copying and `/usr/bin/pbcopy`. These are terminal integration tests, not proof of every coding-agent UI or authenticated workflow. Original clipboard representations are restored after the fixture.
