@@ -259,6 +259,21 @@ enum HarnessQualification {
                     || overlay.triggerFrame.minY >= display.visibleFrame.maxY - 0.5
                 try check("Display-edge placement", attached && plainBand,
                           "Current display \(display.frame), visible \(display.visibleFrame), trigger \(overlay.triggerFrame), panel \(overlay.panel.frame); plain-display handle stays in the measured menu-bar band")
+                let idle = overlay.idleTriggerAppearanceForFixture
+                if layout.notchFrame != nil {
+                    try check("Idle notch has no painted extension", idle.transparent && idle.labelHidden && !idle.shadow
+                              && idle.receivesMouse && !overlay.panel.isVisible,
+                              "The collapsed native trigger is clear, unlabelled, and shadow-free; the expanded panel is ordered out")
+                } else {
+                    try check("Plain display retains visible handle", !idle.transparent && !idle.labelHidden
+                              && idle.receivesMouse && !idle.shadow,
+                              "A display without a camera keeps its labelled handle")
+                }
+                // WindowServer applies a newly ordered window asynchronously.
+                try? await waitFor({ overlay.idleTriggerHitForFixture }, timeout: 2,
+                                   description: "idle trigger WindowServer registration")
+                try check("Idle hover margin remains hittable", overlay.idleTriggerHitForFixture,
+                          "WindowServer resolves a mouse hit in the narrow trigger margin to the actual trigger window")
             }
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("knotch-settings-fixture", isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

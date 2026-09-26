@@ -123,3 +123,11 @@ The owner asked for a unified UI accommodating both tools. Terminal mode now sho
 Native UI inspection confirmed the shared workspace, shelf hide/show, the full library's filter empty state, and corrected single-line Copy labels. Two shelf image drags and a full-library-to-tab drag inserted image paths without Return; early shelf drag attempts had no visible result and remain inconclusive. After the final rebuild/restart, a fresh shell accepted another physical shelf-to-terminal drag. The unsubmitted path was cleared, leaving a clean live home shell. No image path was executed or agent request sent.
 
 Installed `/Applications/Knotch.app` passes signature verification and matches the Release executable SHA-256 `7048d391170c43c956cf01b16bd00de30be25232e8d596eb3285cc51d019fb71`. Floating-thumbnail-to-notch delivery, physical monitor transitions, VoiceOver, and measured animation performance remain unqualified; no broader completion claim is made.
+
+## Idle notch without a painted extension — September 26
+
+The owner clarified that the idle app still protruded below the notch. The collapsed trigger is now visually clear on notched displays, with no label or shadow. Its small invisible interaction margins remain; plain displays keep the visible handle. See [decision 0016](decisions/0016-transparent-idle-notch.md).
+
+Model tests, test/Release builds, and [12 native Settings/display checks](test-results/idle-notch.json) passed. The new checks verify the clear idle appearance and a real WindowServer hit in the lower hover margin. An initial immediate hit query raced window registration; a bounded fixture-only wait fixed that test timing. Installed UI automation opened the clear target and minimised back to idle. Physical hover and external drag delivery through the transparent target remain unqualified.
+
+The app was installed and restarted, then left collapsed with no shell. Signature verification passed and the installed executable matches Release SHA-256 `90b51acdaabff38342161748ee961ed2abc3f4658466c6f97234fd62137b1492`. Ghostty and the qualified toolchain are unchanged.

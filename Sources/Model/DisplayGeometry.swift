@@ -51,6 +51,8 @@ struct DisplayGeometry {
         let panelUsable = CGRect(x: usable.minX, y: usable.minY,
                                  width: usable.width, height: screenFrame.maxY - usable.minY)
         let panelTop = screenFrame.maxY
+        // Invisible margins make the camera target reachable from adjacent
+        // screen pixels. The notched trigger itself paints no cap or lip.
         let lip: CGFloat = 2
         let wing: CGFloat = 8
         let triggerX = clamp(notch.minX - wing,

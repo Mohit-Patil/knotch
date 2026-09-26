@@ -1,6 +1,6 @@
 import AppKit
 
-/// A visible tracking surface. Tracking stays local to the owned handle/panel;
+/// A bounded tracking surface. Tracking stays local to the owned handle/panel;
 /// there is no global mouse monitor or invisible screen-sized hit target.
 @MainActor
 private final class OverlayTrackingView: NSView {
@@ -129,6 +129,18 @@ final class OverlayController: NSObject, NSWindowDelegate {
     // owner's real pointer when a test window happens to appear underneath it.
     var fixtureControlsTracking = false
     var reduceMotionForFixture: Bool?
+    var idleTriggerAppearanceForFixture: (transparent: Bool, labelHidden: Bool, receivesMouse: Bool, shadow: Bool) {
+        (triggerView.layer?.backgroundColor?.alpha == 0 && triggerPanel.backgroundColor.alphaComponent == 0,
+         triggerLabel.isHidden,
+         !triggerPanel.ignoresMouseEvents && triggerPanel.alphaValue == 1 && triggerPanel.isVisible,
+         triggerPanel.hasShadow)
+    }
+    var idleTriggerHitForFixture: Bool {
+        // Sample the reachable hover margin below the camera, not hardware
+        // pixels that cannot be inspected in an ordinary screenshot.
+        let point = NSPoint(x: triggerFrame.midX, y: triggerFrame.minY + 1)
+        return NSWindow.windowNumber(at: point, belowWindowWithWindowNumber: 0) == triggerPanel.windowNumber
+    }
     func settlePresentationForFixture() {
         let target = state.presentation == .collapsed ? 0.0 : 1.0
         motion.cancel(at: target)
@@ -160,6 +172,8 @@ final class OverlayController: NSObject, NSWindowDelegate {
         super.init()
 
         configureWindow(triggerPanel)
+        // Visual transparency must not disable the bounded hover/drop target.
+        triggerPanel.ignoresMouseEvents = false
         triggerPanel.allowsKey = false
         configureWindow(panel)
         panel.delegate = self
@@ -630,6 +644,10 @@ final class OverlayController: NSObject, NSWindowDelegate {
 
     private func updateTriggerAppearance() {
         let notched = layout?.notchFrame != nil
+        // NSScreen reports a camera exclusion band, not its exact visible
+        // hardware outline. Drawing a cap here adds a lip beneath that outline.
+        // Keep only the small transparent interaction area on notched screens.
+        triggerView.layer?.backgroundColor = (notched ? NSColor.clear : NSColor.black).cgColor
         triggerLabel.isHidden = notched
         triggerView.layer?.cornerRadius = notched ? 10 : 14
         triggerView.layer?.maskedCorners = notched
