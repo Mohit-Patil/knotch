@@ -216,3 +216,9 @@ PASS: Test/Release builds and [45 native Clipboard regression checks](clipboard-
 INCONCLUSIVE: Automated pointer entry, scrolling, dragging, and keyboard gestures produced no reliable UI response. Hover reveal, overlay button hit testing, and physical drag are not verified by this run. NOT_RUN: keyboard-navigation and VoiceOver qualification. The existing regression fixture covers clipboard/session behavior, not SwiftUI hover appearance.
 
 The installed app was restarted and signature-verified; its executable matches Release SHA-256 `2c0d8b8fbd993126d624be79309708af01a65bdf62d5a5d40b81d5d6fe194089`. The pinned Ghostty engine and qualified toolchain remain unchanged.
+
+## All shelf card types follow-up — September 26
+
+PASS: Test/Release builds and [45 existing native clipboard checks](clipboard-all-card-types.json). Installed UI inspection shows text and images using full-card previews without permanent action rows, and type-specific named accessibility actions. The shared implementation also covers rich text, links, and files, preserving their original clipboard representations and terminal insertion callbacks.
+
+NOT_RUN: Physical hover/focus/drag verification, full keyboard/VoiceOver navigation, and live visual inspection of link, rich-text, and file cards. The native fixture verifies capture/copy/insert/session behavior rather than the hover overlay. The app was rebuilt, installed, signature-verified, and restarted. Installed executable SHA-256 matches Release: `e97256f190574787b985f5c01af7253c2e6d07397dbf358de00abe9630c10115`.

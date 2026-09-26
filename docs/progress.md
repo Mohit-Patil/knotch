@@ -139,3 +139,9 @@ Image cards now use nearly the whole fixed-size tile for an uncropped aspect-fit
 Test/Release builds and [45 native Clipboard regression checks](test-results/clipboard-image-hover.json) passed. The restarted installed app visibly shows the larger full-image previews without a permanent button row. The named accessibility Insert action was exercised against a real shell without Return, then that disposable shell was closed. Automated hover, drag, and keyboard gestures were inconclusive; hover-control hit testing and full keyboard/VoiceOver navigation remain unqualified. No user screenshot data was added to the repository.
 
 The installed app passes signature verification, was restarted into the new build, and matches Release SHA-256 `2c0d8b8fbd993126d624be79309708af01a65bdf62d5a5d40b81d5d6fe194089`. The engine and toolchain are unchanged.
+
+## Hover actions for every shelf type — September 26
+
+Text, rich text, links, and files now share the image card's preview-first layout and hover/focus Copy/Insert overlay. Text gains up to four preview lines; file cards show names and a count. All cards preserve their existing copy/insert formats and expose type-specific accessibility actions. The common wrapper keeps card dimensions, native dragging, and pin visibility consistent.
+
+Test/Release builds and [45 native clipboard checks](test-results/clipboard-all-card-types.json) passed. Installed UI inspection confirmed the text card uses the whole tile, with no permanent Copy row, alongside the existing full-image cards. Physical hover, keyboard/VoiceOver navigation, and live layout for every other data type remain unqualified. The installed app was restarted, its signature verified, and its executable matched Release SHA-256 `e97256f190574787b985f5c01af7253c2e6d07397dbf358de00abe9630c10115`.

@@ -124,7 +124,7 @@ private struct ClipboardShelfCard: View {
 
     private enum Action: Hashable { case copy, insert }
 
-    private var showsImageActions: Bool {
+    private var showsActions: Bool {
         !isDragging && (isHovered || cardFocused || focusedAction != nil)
     }
 
@@ -143,28 +143,10 @@ private struct ClipboardShelfCard: View {
     }
 
     var body: some View {
-        Group {
-            if let previewImage {
-                imageCard(previewImage)
-            } else {
-                contentCard
-            }
-        }
-        .frame(width: 174, height: 110)
-        .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 9))
-        .overlay {
-            RoundedRectangle(cornerRadius: 9)
-                .strokeBorder(.white.opacity(0.075), lineWidth: 1)
-                .allowsHitTesting(false)
-        }
-    }
-
-    private func imageCard(_ image: NSImage) -> some View {
-        Image(nsImage: image)
-            .resizable()
-            .scaledToFit()
+        preview
             .frame(width: 166, height: 102)
             .background(Color.black.opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
+            .clipped()
             .overlay(ClipboardDragSource(entry: entry, onDragChange: { dragging in
                 isDragging = dragging
                 onDragChange(dragging)
@@ -173,13 +155,20 @@ private struct ClipboardShelfCard: View {
                 if entry.pinned { pinBadge.allowsHitTesting(false) }
             }
             .overlay(alignment: .bottomTrailing) {
-                imageActions
+                cardActions
                     .padding(5)
-                    .opacity(showsImageActions ? 1 : 0)
-                    .allowsHitTesting(showsImageActions)
-                    .accessibilityHidden(!showsImageActions)
+                    .opacity(showsActions ? 1 : 0)
+                    .allowsHitTesting(showsActions)
+                    .accessibilityHidden(!showsActions)
             }
             .padding(4)
+            .frame(width: 174, height: 110)
+            .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 9))
+            .overlay {
+                RoundedRectangle(cornerRadius: 9)
+                    .strokeBorder(.white.opacity(0.075), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
             .contentShape(RoundedRectangle(cornerRadius: 9))
             .focusable(interactions: .activate)
             .focused($cardFocused)
@@ -189,19 +178,19 @@ private struct ClipboardShelfCard: View {
                 onCopy()
                 return .handled
             }
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: showsImageActions)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: showsActions)
             .help("Drag into the terminal or onto another terminal tab")
             .accessibilityElement(children: .contain)
-            .accessibilityLabel("Image: \(accessibleSummary). Drag into terminal.")
+            .accessibilityLabel("\(kindName): \(accessibleSummary). Drag into terminal.")
             .accessibilityActions {
-                Button("Copy image to clipboard", action: onCopy)
+                Button("Copy \(kindName.lowercased()) to clipboard", action: onCopy)
                 if canInsert {
-                    Button("Insert image into terminal", action: onInsert)
+                    Button("Insert \(kindName.lowercased()) into terminal", action: onInsert)
                 }
             }
     }
 
-    private var imageActions: some View {
+    private var cardActions: some View {
         HStack(spacing: 4) {
             actionButton("Copy", symbol: "doc.on.doc", action: onCopy)
                 .focused($focusedAction, equals: .copy)
@@ -218,62 +207,50 @@ private struct ClipboardShelfCard: View {
         .background(.black.opacity(0.88), in: RoundedRectangle(cornerRadius: 7))
     }
 
-    private var contentCard: some View {
-        VStack(spacing: 6) {
-            preview
-                .frame(width: 158, height: 62)
-                .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 6))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .overlay(ClipboardDragSource(entry: entry, onDragChange: onDragChange))
-                .help("Drag into the terminal or onto another terminal tab")
-                .accessibilityLabel("\(kindName): \(accessibleSummary). Drag into terminal.")
-
-            HStack(spacing: 5) {
-                actionButton("Copy", symbol: "doc.on.doc", action: onCopy)
-                    .accessibilityLabel("Copy \(accessibleSummary) to clipboard")
-                if canInsert {
-                    actionButton("Insert", symbol: "arrow.up.to.line", action: onInsert)
-                        .accessibilityLabel("Insert \(accessibleSummary) into terminal")
-                        .help("Insert into the selected terminal without pressing Return")
-                }
-            }
-            .frame(height: 22)
-        }
-        .padding(8)
-    }
-
     @ViewBuilder
     private var preview: some View {
         if let previewImage {
-            ZStack(alignment: .topTrailing) {
-                Image(nsImage: previewImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if entry.pinned { pinBadge }
-            }
+            Image(nsImage: previewImage)
+                .resizable()
+                .scaledToFit()
         } else {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 4) {
                     Image(systemName: kindSymbol)
                         .font(.system(size: 10, weight: .medium))
-                    Text(kindName)
+                    Text(previewHeading)
                         .font(.system(size: 10, weight: .medium))
                     Spacer(minLength: 0)
-                    if entry.pinned { pinBadge }
                 }
                 .foregroundStyle(.white.opacity(0.49))
 
-                Text(entry.label.isEmpty ? "Untitled item" : entry.label)
+                Text(verbatim: previewText)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.white.opacity(0.88))
-                    .lineLimit(2)
+                    .lineLimit(4)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Spacer(minLength: 0)
             }
-            .padding(7)
+            .padding(8)
         }
+    }
+
+    private var previewHeading: String {
+        if entry.kind == .files, let count = entry.fileURLs?.count, count > 1 {
+            return "\(count) files"
+        }
+        return kindName
+    }
+
+    private var previewText: String {
+        if entry.kind == .files, let urls = entry.fileURLs, !urls.isEmpty {
+            var names = urls.prefix(3).map(\.lastPathComponent)
+            if urls.count > 3 { names.append("+\(urls.count - 3) more") }
+            return names.joined(separator: "\n")
+        }
+        let text = entry.text ?? entry.label
+        return text.isEmpty ? "Untitled item" : String(text.prefix(640))
     }
 
     private var pinBadge: some View {
