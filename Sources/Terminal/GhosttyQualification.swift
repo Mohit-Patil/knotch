@@ -370,6 +370,62 @@ enum HarnessQualification {
                       && ghostty_surface_foreground_pid(surface) == pid,
                       "Returning from Tools presents the same live Ghostty surface and shell PID")
             tools.shutdown()
+            let notifications = coordinator.agentNotifications
+            notifications.enabled = true
+            notifications.onLeft = false
+            notifications.clear()
+            coordinator.hideTerminal()
+            overlay.settlePresentationForFixture()
+            let keyBeforeNotification = NSApp.keyWindow
+            send("printf '\\033]777;notify;Claude fixture;Response complete\\007'\r", to: session)
+            try await waitFor({ notifications.notices.count == 1 }, description: "real Ghostty OSC notification")
+            try check("Agent notification from real PTY", notifications.notices.first?.sessionID == session.id
+                      && notifications.notices.first?.message == "Response complete"
+                      && notifications.panelForFixture?.isVisible == true,
+                      "OSC 777 traversed the live PTY and pinned Ghostty callback to the native indicator")
+            try check("Notification leaves focus and session intact", NSApp.keyWindow === keyBeforeNotification
+                      && notifications.panelForFixture?.canBecomeKey == false
+                      && overlay.state.presentation == .collapsed && session.surface == surface,
+                      "Notification did not activate the overlay, move keyboard focus, or replace the shell")
+            notifications.receive(sessionID: session.id, title: "Claude fixture", message: "Response complete")
+            try check("Notification coalescing", notifications.notices.count == 1, "Repeated notification in one session does not stack windows")
+            overlay.setSystemDialogPresented(true)
+            try check("Notification yields to dialog", notifications.panelForFixture?.isVisible == false && notifications.notices.count == 1,
+                      "Modal presentation hides the droplet without discarding its pending event")
+            overlay.setSystemDialogPresented(false)
+            notifications.openFirst()
+            try check("Notification opens its terminal", coordinator.store.selectedID == session.id
+                      && session.view.superview === coordinator.container && session.surface == surface
+                      && notifications.notices.isEmpty, "Opening acknowledged the event and reattached its original terminal")
+            try await Task.sleep(for: .milliseconds(1100)) // Respect the pinned engine's notification rate limit.
+            coordinator.hideTerminal()
+            send("printf '\\033]9;Codex fixture ready\\007'\r", to: session)
+            try await waitFor({ notifications.notices.first?.message == "Codex fixture ready" }, description: "OSC 9 agent notification")
+            try check("Codex OSC 9 notification", notifications.notices.first?.sessionID == session.id,
+                      "Codex's documented OSC 9 format traverses the real engine and maps back to its terminal")
+            notifications.dismissFirst()
+            send("printf '\\007'; printf 'BELL_FIXTURE_DONE\\n'\r", to: session)
+            try await waitFor({ screen(session).contains("\nBELL_FIXTURE_DONE") }, description: "bell fixture")
+            try check("Bell is not agent completion", notifications.notices.isEmpty,
+                      "Ordinary terminal bells are not interpreted as completed work")
+            let display = NSRect(x: -1920, y: -100, width: 1920, height: 1080)
+            let notch = NSRect(x: display.midX - 100, y: display.maxY - 38, width: 200, height: 38)
+            let leftFrame = AgentNotificationController.frame(screen: display, notch: notch, menuHeight: 38, left: true)
+            let rightFrame = AgentNotificationController.frame(screen: display, notch: notch, menuHeight: 38, left: false)
+            try check("Notification side geometry", display.contains(leftFrame) && display.contains(rightFrame)
+                      && leftFrame.maxX < notch.minX && rightFrame.minX > notch.maxX,
+                      "Both sides sit outside the physical notch within a negative-origin external display")
+            try check("Notification sanitizes terminal text", AgentNotificationController.clean("Hello\u{202E}\u{1b}World", limit: 80) == "HelloWorld",
+                      "Untrusted terminal control and bidi characters are removed")
+            let otherID = UUID()
+            notifications.receive(sessionID: otherID, title: "Other", message: "Update")
+            notifications.retainSessions([session.id])
+            try check("Closed-tab notification removed", notifications.notices.isEmpty, "Removed terminals cannot leave stale actionable notices")
+            notifications.enabled = false
+            notifications.receive(sessionID: session.id, title: "Disabled", message: "Update")
+            try check("Notification preference off", notifications.notices.isEmpty, "Disabled notifications do not create indicators")
+            notifications.enabled = true
+            notifications.clear()
             coordinator.overlay?.hide(restoreFocus: false)
             session.view.removeFromSuperview()
             coordinator.store.closeAfterConfirmation(id: session.id)

@@ -165,3 +165,11 @@ Actual runtime checks: public London weather search/forecast and dated currency 
 Not run: camera capture, EventKit permissions/data/writes, Music/Spotify automation/playback, keyed stock quotes, AirDrop delivery, user Shortcut execution, power assertions, audio changes or automatic volume HUD. Claude/Copilot live quota, system-wide Now Playing, live stock pricing, timer notifications/automatic cycles are not implemented. Existing physical hover, global hotkey, VoiceOver, multi-monitor and performance qualification limits still apply. No blanket feature-parity claim.
 
 Final Release installed at `/Applications/Knotch.app`, ad-hoc signature verified, restarted and inspected. Installed executable matches the build SHA-256 `a43f215d38ccdb34d1a22d183b8243110c257201adcafd7d7e4044f9aed173d3`. Compact favourites and fitted Mirror controls were visually checked; camera stayed off. See [installation receipt](test-results/toolbox-install.json).
+
+## Agent notification droplet — September 26
+
+Added a persistent spring-animated native notification beside either side of the notch, driven by Ghostty OSC 9/777 callbacks. Settings includes enabled/side/preview controls and launch-scoped Claude/Codex commands. Global agent configuration stays untouched. Bell/idle/output-text heuristics are not used. [Design and integration limits](decisions/0019-agent-notification-droplet.md).
+
+Release and test builds pass. [32 Settings/notification checks](test-results/notification-settings.json) and [49 overlay checks](test-results/notification-overlay.json) pass. Actual PTY escape sequences exercised both formats, retained-session click routing, no focus theft, modal suspension and queue cleanup. `scripts/test-notifications.sh` passed real constant hook execution and shell-quoting checks without launching an agent.
+
+Installed and restarted `/Applications/Knotch.app`, verified signature and matching executable hash. Native UI inspection confirmed settings controls and the preview capsule staying visible after collapse, then dismissing. No paid agent turn, physical frame-pacing measurement, OS Reduce Motion toggle or physical display rearrangement was performed. [Install receipt](test-results/notification-install.json).

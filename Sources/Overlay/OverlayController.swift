@@ -128,6 +128,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
     // Deferred drops must not undo a later hide, focus change, or tab activation.
     private(set) var presentationRevision: UInt64 = 0
     var onPresentationChange: ((OverlayPresentation) -> Void)?
+    var onDialogPresentationChange: ((Bool) -> Void)?
     var onTerminalPanelSizeCommit: ((CGSize) -> Void)?
     var onExternalDrop: ((NSPasteboard) -> Bool)?
     var onExternalDragToHandle: (() -> Void)?
@@ -359,6 +360,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
     /// screen-edge level after their modal loop finishes, including cancel.
     func setSystemDialogPresented(_ presented: Bool) {
         systemDialogDepth = max(0, systemDialogDepth + (presented ? 1 : -1))
+        onDialogPresentationChange?(systemDialogDepth > 0)
         updateWindowLevels()
     }
 

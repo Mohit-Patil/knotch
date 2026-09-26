@@ -31,6 +31,7 @@ final class GhosttySession: TerminalSession {
     }
     private(set) var status = "Session starting"
     private(set) var isRunning = false
+    var onNotification: ((String, String) -> Void)?
     var onStatusChange: (() -> Void)?
     var onSystemDialogChange: ((Bool) -> Void)?
     var onCloseRequested: (() -> Void)?
@@ -269,6 +270,14 @@ final class GhosttySession: TerminalSession {
     }
     func handle(_ action: ghostty_action_s) -> Bool {
         switch action.tag {
+        case GHOSTTY_ACTION_DESKTOP_NOTIFICATION:
+            func text(_ pointer: UnsafePointer<CChar>?) -> String {
+                guard let pointer else { return "" }
+                return String(decoding: UnsafeRawBufferPointer(start: pointer, count: strnlen(pointer, 4096)), as: UTF8.self)
+            }
+            let notification = action.action.desktop_notification
+            onNotification?(text(notification.title), text(notification.body))
+            return true
         case GHOSTTY_ACTION_SHOW_CHILD_EXITED:
             didExit(code: action.action.child_exited.exit_code)
             return true

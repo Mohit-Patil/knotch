@@ -66,6 +66,7 @@ final class ShortcutController: NSObject {
                           panelSize: CGSize, defaultPanelSize: CGSize, maximumPanelSize: CGSize,
                           panelSizeIsCustom: Bool,
                           setPanelSize: @escaping (CGSize?) -> Void,
+                          notifications: AgentNotificationController,
                           clipboardPersists: Bool,
                           setClipboardPersists: @escaping (Bool) -> Void) -> NSView {
         NSHostingView(rootView: AccessSettings(controller: self, initialHover: hoverEnabled,
@@ -74,6 +75,7 @@ final class ShortcutController: NSObject {
                                                maximumPanelSize: maximumPanelSize,
                                                panelSizeIsCustom: panelSizeIsCustom,
                                                setPanelSize: setPanelSize,
+                                               notifications: notifications,
                                                clipboardPersists: clipboardPersists,
                                                setClipboardPersists: setClipboardPersists))
     }
@@ -87,6 +89,7 @@ final class ShortcutController: NSObject {
 }
 
 private struct AccessSettings: View {
+    let notifications: AgentNotificationController
     let controller: ShortcutController
     let setHover: (Bool) -> Void
     let onRecordingChange: (Bool) -> Void
@@ -106,7 +109,9 @@ private struct AccessSettings: View {
          onRecordingChange: @escaping (Bool) -> Void,
          panelSize: CGSize, defaultPanelSize: CGSize, maximumPanelSize: CGSize,
          panelSizeIsCustom: Bool, setPanelSize: @escaping (CGSize?) -> Void,
+         notifications: AgentNotificationController,
          clipboardPersists: Bool, setClipboardPersists: @escaping (Bool) -> Void) {
+        self.notifications = notifications
         self.controller = controller
         self.setHover = setHover
         self.onRecordingChange = onRecordingChange
@@ -136,6 +141,7 @@ private struct AccessSettings: View {
         })
     }
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
                 Image(systemName: "hand.point.up.left")
@@ -196,10 +202,13 @@ private struct AccessSettings: View {
                 Text("Saved only on this Mac. Pause capture or clear items in the Clipboard tab.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Divider()
+            AgentNotificationSettings(controller: notifications)
             Spacer(minLength: 0)
         }
         .padding(26)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
         .preferredColorScheme(.dark)
     }
 }

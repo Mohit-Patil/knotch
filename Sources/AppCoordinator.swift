@@ -28,6 +28,13 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var toolsView: NSView?
     private var toolsStore: ToolsStore?
     private let volumeHUD = VolumeHUDController()
+    lazy var agentNotifications: AgentNotificationController = {
+        let defaults = runningQualification ? UserDefaults(suiteName: "dev.personal.Knotch.notification-fixture")! : .standard
+        let controller = AgentNotificationController(defaults: defaults)
+        controller.screenProvider = { [weak self] in self?.overlay?.panel.screen ?? NSScreen.main }
+        controller.onOpen = { [weak self] id in self?.selectSession(id: id) }
+        return controller
+    }()
     private var settingsSelected = false
     private var clipboardSelected = false
     private var settingsView: NSView?
@@ -133,6 +140,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 guard let self, !self.settingsSelected, !self.clipboardSelected, !self.toolsSelected else { return nil }
                 return self.store.session
             })
+            controller.onDialogPresentationChange = { [weak self] in self?.agentNotifications.setSuspended("dialog", $0) }
             overlay = controller
             window = controller.panel
             controller.onExternalDrop = { [weak self] board in
@@ -390,6 +398,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func updateStatus() {
+        agentNotifications.retainSessions(Set(store.sessions.map(\.id)))
         let pinned = overlay?.state.isPinned == true
         pinButton?.image = NSImage(systemSymbolName: pinned ? "pin.fill" : "pin", accessibilityDescription: nil)
         pinButton?.contentTintColor = pinned ? .controlAccentColor : .secondaryLabelColor
@@ -480,6 +489,10 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         session.onActivate = { [weak self] in self?.selectSession(id: id) }
         if let ghostty = session as? GhosttySession {
+            ghostty.onNotification = { [weak self, weak ghostty] title, body in
+                guard let self, let ghostty, self.store.sessions.contains(where: { $0.id == id }) else { return }
+                self.agentNotifications.receive(sessionID: id, title: title.isEmpty ? ghostty.displayTitle : title, message: body)
+            }
             ghostty.onSystemDialogChange = { [weak self] presented in
                 self?.overlay?.setSystemDialogPresented(presented)
             }
@@ -512,6 +525,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func selectSession(id: UUID) {
+        agentNotifications.acknowledge(id)
         guard store.sessions.contains(where: { $0.id == id }) else { return }
         store.select(id: id)
         if let session = store.session { attach(session) }
@@ -912,6 +926,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 maximumPanelSize: sizing?.maximum ?? CGSize(width: 1920, height: 1080),
                 panelSizeIsCustom: savedTerminalPanelSize != nil,
                 setPanelSize: { [weak self] size in self?.setTerminalPanelSize(size) },
+                notifications: agentNotifications,
                 clipboardPersists: clipboard?.persistsHistory ?? false,
                 setClipboardPersists: { [weak self] enabled in
                     self?.clipboard?.setPersistsHistory(enabled)
@@ -1015,6 +1030,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         toolsStore?.shutdown()
         volumeHUD.shutdown()
+        agentNotifications.shutdown()
         store.closeAllAfterConfirmation()
         clipboardImageExport.cleanUp()
         for folder in externalDropFolders { try? FileManager.default.removeItem(at: folder) }
