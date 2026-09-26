@@ -27,6 +27,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var clipboardView: NSView?
     private var clipboard: ClipboardHistory?
     private var clipboardDragActive = false
+    private var clipboardDragGeneration: UInt64 = 0
     private var retainedDragSourceView: NSView?
     private var dragBackdropView: NSView?
     private let clipboardImageExport = ClipboardImageExport()
@@ -44,16 +45,24 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var shelfViewForFixture: NSView? { shelfView }
     func setShelfForFixture(_ visible: Bool) { shelfEnabled = visible; updateWorkspace() }
     func insertShelfEntryForFixture(_ id: UUID) { insertShelfEntry(id) }
+    private func markPanelPointerForFixture() {
+        overlay?.fixtureControlsTracking = true
+        overlay?.pointerLocationForFixture = nil
+        overlay?.send(.pointerEnteredPanel)
+    }
     func hoverClipboardTabForFixture(sessionID: UUID) {
         clipboardDragChanged(true)
         selectSession(id: sessionID)
+        markPanelPointerForFixture()
     }
     func acceptClipboardDropForFixture(entryID: UUID, sessionID: UUID) -> Bool {
+        markPanelPointerForFixture()
         clipboardDragChanged(true)
         defer { clipboardDragChanged(false) }
         return acceptClipboardDrop(entryID: entryID, sessionID: sessionID)
     }
     func acceptClipboardDropInNewTabForFixture(entryID: UUID) -> Bool {
+        markPanelPointerForFixture()
         clipboardDragChanged(true)
         defer { clipboardDragChanged(false) }
         return acceptClipboardDropInNewTab(entryID: entryID)
@@ -435,6 +444,9 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         session.onActivate = { [weak self] in self?.selectSession(id: id) }
         if let ghostty = session as? GhosttySession {
+            ghostty.onSystemDialogChange = { [weak self] presented in
+                self?.overlay?.setSystemDialogPresented(presented)
+            }
             ghostty.nativeView.onClipboardDrop = { [weak self] entryID in
                 self?.acceptClipboardDrop(entryID: entryID, sessionID: id) ?? false
             }
@@ -600,9 +612,15 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func clipboardDragChanged(_ dragging: Bool) {
+        let wasDragging = clipboardDragActive
+        if dragging && !wasDragging { clipboardDragGeneration &+= 1 }
         clipboardDragActive = dragging
         workspace.preservesDragSource = dragging
-        overlay?.setInteractionLock("clipboard-drag", dragging)
+        if dragging {
+            overlay?.setInteractionLock("clipboard-drag", true)
+        } else if wasDragging {
+            overlay?.finishPointerInteraction("clipboard-drag")
+        }
         if !dragging {
             dragBackdropView?.removeFromSuperview()
             dragBackdropView = nil
@@ -664,12 +682,18 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard clipboardDragActive,
               let entry = clipboard?.entries.first(where: { $0.id == entryID }),
               store.sessions.contains(where: { $0.id == sessionID && $0.isRunning }) else { return false }
+        let revision = overlay?.presentationRevision
+        let dragGeneration = clipboardDragGeneration
         // Complete AppKit's drag first. This also lets the source release its
         // presentation lock before any unsafe-paste confirmation is shown.
         Task { @MainActor [weak self] in
             guard let self else { return }
+            guard self.allowsDeferredPresentation(revision) else {
+                self.finishClipboardDropPresentation(dragGeneration: dragGeneration)
+                return
+            }
             self.insertClipboardEntry(entry, into: sessionID)
-            self.finishClipboardDropPresentation()
+            self.finishClipboardDropPresentation(dragGeneration: dragGeneration)
         }
         return true
     }
@@ -680,6 +704,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let count = store.sessions.count
         open(directory: store.session?.directory ?? FileManager.default.homeDirectoryForCurrentUser)
         guard store.sessions.count == count + 1, let sessionID = store.session?.id else { return false }
+        let revision = overlay?.presentationRevision
+        let dragGeneration = clipboardDragGeneration
         Task { @MainActor [weak self] in
             guard let self else { return }
             // A fresh login shell can echo pasted bytes before its prompt is
@@ -688,23 +714,33 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             for _ in 0..<20 {
                 guard let session = self.store.sessions.first(where: { $0.id == sessionID }) as? GhosttySession,
                       session.isRunning else {
-                    self.finishClipboardDropPresentation()
+                    self.finishClipboardDropPresentation(dragGeneration: dragGeneration)
                     return
                 }
                 if !session.title.isEmpty { break }
                 try? await Task.sleep(for: .milliseconds(50))
             }
             try? await Task.sleep(for: .milliseconds(100))
+            guard self.allowsDeferredPresentation(revision) else {
+                self.finishClipboardDropPresentation(dragGeneration: dragGeneration)
+                return
+            }
             self.insertClipboardEntry(entry, into: sessionID)
-            self.finishClipboardDropPresentation()
+            self.finishClipboardDropPresentation(dragGeneration: dragGeneration)
         }
         return true
     }
 
-    private func finishClipboardDropPresentation() {
-        clipboardDragChanged(false)
+    private func finishClipboardDropPresentation(dragGeneration: UInt64) {
+        if clipboardDragGeneration == dragGeneration { clipboardDragChanged(false) }
         container.needsDisplay = true
         attachedSession?.view.needsDisplay = true
+    }
+
+    private func allowsDeferredPresentation(_ revision: UInt64?) -> Bool {
+        guard let overlay else { return true }
+        guard let revision else { return false }
+        return overlay.allowsDeferredPresentation(revision)
     }
 
     private func insertClipboardEntry(_ entry: ClipboardEntry, into sessionID: UUID) {
@@ -768,6 +804,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             receiveExternalEntry(entry, destination: destination)
         case .promises(let receivers):
             guard receivers.count == 1 else { return false }
+            let revision = overlay?.presentationRevision
             let folder = FileManager.default.temporaryDirectory
                 .appendingPathComponent("Knotch-Screenshot-Drop-\(UUID().uuidString)", isDirectory: true)
             do {
@@ -782,13 +819,19 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 [weak self] fileURL, error in
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    if let error { self.showError(error); return }
-                    guard let data = try? Data(contentsOf: fileURL),
-                          let entry = ExternalTerminalDrop.image(from: data) else {
-                        self.showError(TerminalFailure.unavailable("The screenshot could not be saved as an image under 4 MB."))
+                    let mayPresent = self.allowsDeferredPresentation(revision)
+                    if let error {
+                        if mayPresent { self.showError(error) }
                         return
                     }
-                    self.receiveExternalEntry(entry, destination: destination)
+                    guard let data = try? Data(contentsOf: fileURL),
+                          let entry = ExternalTerminalDrop.image(from: data) else {
+                        if mayPresent {
+                            self.showError(TerminalFailure.unavailable("The screenshot could not be saved as an image under 4 MB."))
+                        }
+                        return
+                    }
+                    self.receiveExternalEntry(entry, destination: destination, present: mayPresent)
                     try? FileManager.default.removeItem(at: fileURL)
                 }
             }
@@ -796,8 +839,10 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return true
     }
 
-    private func receiveExternalEntry(_ candidate: ClipboardEntry, destination: ExternalDropDestination) {
+    private func receiveExternalEntry(_ candidate: ClipboardEntry, destination: ExternalDropDestination,
+                                      present: Bool = true) {
         guard let entry = clipboard?.addDropped(candidate) else { return }
+        guard present else { return }
         switch destination {
         case .clipboard:
             showClipboard()

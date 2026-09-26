@@ -10,6 +10,8 @@ enum OverlayEvent {
     case pointerExitedTrigger
     case pointerEnteredPanel
     case pointerExitedPanel
+    /// Reconcile both tracking regions after a drag, when mouse-exit events may be suppressed.
+    case pointerInteractionEnded(inTrigger: Bool, inPanel: Bool)
     case terminalInput
     case timerFired(UInt64)
     case activate
@@ -99,6 +101,15 @@ struct OverlayState {
             exitIntent = true
             armExitIfEligible(now: now, &effects)
 
+        case .pointerInteractionEnded(let inTrigger, let inPanel):
+            cancelPending(&effects)
+            pointerInTrigger = inTrigger
+            pointerInPanel = inPanel
+            exitIntent = !inTrigger && !inPanel
+            if presentation != .collapsed {
+                armExitIfEligible(now: now, &effects)
+            }
+
         case .terminalInput:
             if presentation == .interactive {
                 lastTerminalInputAt = now
@@ -157,8 +168,16 @@ struct OverlayState {
             cancelPending(&effects)
             ownsFocus = false
             if presentation == .interactive {
-                changePresentation(isPinned || !interactionLocks.isEmpty ? .preview : .collapsed, &effects)
+                if isPinned || !interactionLocks.isEmpty {
+                    // Once focus has moved away, the final lock/pin release must
+                    // settle a preview even when activation was keyboard-only.
+                    if !pointerInTrigger && !pointerInPanel { exitIntent = true }
+                    changePresentation(.preview, &effects)
+                } else {
+                    changePresentation(.collapsed, &effects)
+                }
             }
+            armExitIfEligible(now: now, &effects)
 
         case .pinChanged(let pinned):
             isPinned = pinned
@@ -166,6 +185,9 @@ struct OverlayState {
             if pinned && presentation == .collapsed {
                 changePresentation(.preview, &effects)
             } else if !pinned {
+                if presentation == .preview && !pointerInTrigger && !pointerInPanel {
+                    exitIntent = true
+                }
                 armExitIfEligible(now: now, &effects)
             }
 
@@ -184,14 +206,29 @@ struct OverlayState {
 
         case .lockRemoved(let reason):
             interactionLocks.remove(reason)
-            armExitIfEligible(now: now, &effects)
+            if presentation == .collapsed && hoverEnabled && pointerInTrigger
+                && interactionLocks.isEmpty && pendingHover == nil {
+                armHover(now: now, &effects)
+            } else {
+                armExitIfEligible(now: now, &effects)
+            }
 
         case .displayChanged(let displayID):
             targetDisplayID = displayID
+            let hadPointerContact = pointerInTrigger || pointerInPanel
+            let hadExitIntent = exitIntent
             cancelPending(&effects)
-            exitIntent = false
+            pointerInTrigger = false
+            pointerInPanel = false
             if presentation == .preview && !isPinned && interactionLocks.isEmpty {
                 changePresentation(.collapsed, &effects)
+            } else if presentation != .collapsed {
+                // The controller will send fresh containment for the new geometry.
+                // Until then, a real departure must not be lost.
+                exitIntent = hadExitIntent || hadPointerContact
+                armExitIfEligible(now: now, &effects)
+            } else {
+                exitIntent = false
             }
 
         case .selectedSessionChanged(let sessionID):

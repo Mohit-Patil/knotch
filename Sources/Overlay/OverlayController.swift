@@ -73,6 +73,7 @@ private final class OverlayResizeHandleView: NSView {
 @MainActor
 private final class OverlayNativePanel: NSPanel {
     var onPointerDown: (() -> Void)?
+    var onKeyboardInput: (() -> Void)?
     var allowsKey = true
     var anchorsToScreenEdge = false
 
@@ -87,6 +88,7 @@ private final class OverlayNativePanel: NSPanel {
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .leftMouseDown { onPointerDown?() }
+        if event.type == .keyDown { onKeyboardInput?() }
         super.sendEvent(event)
     }
 }
@@ -110,6 +112,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
     private var exitTimer: Timer?
     private var activationTimer: Timer?
     private var externalDragExitTimer: Timer?
+    private var externalDragGeneration: UInt64 = 0
     private var activationGeneration: UInt64 = 0
     private var pendingActivation: UInt64?
     private var priorFrontmostPID: pid_t?
@@ -120,6 +123,8 @@ final class OverlayController: NSObject, NSWindowDelegate {
     var isAnimating: Bool { motion.isAnimating }
 
     private(set) var state = OverlayState()
+    // Deferred drops must not undo a later hide, focus change, or tab activation.
+    private(set) var presentationRevision: UInt64 = 0
     var onPresentationChange: ((OverlayPresentation) -> Void)?
     var onTerminalPanelSizeCommit: ((CGSize) -> Void)?
     var onExternalDrop: ((NSPasteboard) -> Bool)?
@@ -128,6 +133,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
     // Controller fixtures supply a complete pointer trace; do not mix in the
     // owner's real pointer when a test window happens to appear underneath it.
     var fixtureControlsTracking = false
+    var pointerLocationForFixture: NSPoint?
     var reduceMotionForFixture: Bool?
     var idleTriggerAppearanceForFixture: (transparent: Bool, labelHidden: Bool, receivesMouse: Bool, shadow: Bool) {
         (triggerView.layer?.backgroundColor?.alpha == 0 && triggerPanel.backgroundColor.alphaComponent == 0,
@@ -196,6 +202,9 @@ final class OverlayController: NSObject, NSWindowDelegate {
         }
         triggerPanel.onPointerDown = { [weak self] in self?.activate() }
         (panel as? OverlayNativePanel)?.onPointerDown = { [weak self] in self?.activate() }
+        // Typing in Clipboard search and Settings deserves the same grace as
+        // terminal input. Observe delivery without consuming or redirecting it.
+        (panel as? OverlayNativePanel)?.onKeyboardInput = { [weak self] in self?.send(.terminalInput) }
 
         NotificationCenter.default.addObserver(self, selector: #selector(screenParametersChanged),
                                                name: NSApplication.didChangeScreenParametersNotification,
@@ -230,7 +239,13 @@ final class OverlayController: NSObject, NSWindowDelegate {
 
     func activate() { send(.activate) }
 
+    func allowsDeferredPresentation(_ revision: UInt64) -> Bool {
+        presentationRevision == revision && state.presentation != .collapsed
+    }
+
     func externalDragChanged(_ entered: Bool) {
+        externalDragGeneration &+= 1
+        let generation = externalDragGeneration
         externalDragExitTimer?.invalidate()
         externalDragExitTimer = nil
         if entered {
@@ -240,9 +255,50 @@ final class OverlayController: NSObject, NSWindowDelegate {
             // The drag destination changes from the notch handle to the
             // expanding panel; do not collapse in that short handoff.
             externalDragExitTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
-                Task { @MainActor [weak self] in self?.setInteractionLock("external-drag", false) }
+                Task { @MainActor [weak self] in
+                    guard let self, self.externalDragGeneration == generation else { return }
+                    self.externalDragExitTimer = nil
+                    self.finishPointerInteraction("external-drag")
+                }
             }
         }
+    }
+
+    /// AppKit can suppress ordinary enter/exit events during native drags.
+    /// Reconcile the real endpoint before unlocking, rather than waiting for a
+    /// mouse exit that may never arrive after a cancelled drag or resize.
+    func finishPointerInteraction(_ reason: String) {
+        guard state.interactionLocks.contains(reason) else { return }
+        let pointer = currentPointerContainment()
+        send(.pointerInteractionEnded(inTrigger: pointer.trigger, inPanel: pointer.panel))
+        setInteractionLock(reason, false)
+    }
+
+    private func currentPointerContainment() -> (trigger: Bool, panel: Bool) {
+        let point: NSPoint
+        #if HARNESS_TESTS
+        if fixtureControlsTracking {
+            guard let supplied = pointerLocationForFixture else {
+                return (state.pointerInTrigger, state.pointerInPanel)
+            }
+            point = supplied
+        } else {
+            point = NSEvent.mouseLocation
+        }
+        #else
+        point = NSEvent.mouseLocation
+        #endif
+        let inTrigger = triggerPanel.frame.contains(point)
+        return (inTrigger, !inTrigger && state.presentation != .collapsed && panel.frame.contains(point))
+    }
+
+    private func reconcilePointerAfterPlacement() {
+        #if HARNESS_TESTS
+        if fixtureControlsTracking && pointerLocationForFixture == nil { return }
+        #endif
+        let pointer = currentPointerContainment()
+        send(pointer.trigger ? .pointerEnteredTrigger : .pointerExitedTrigger)
+        send(pointer.panel ? .pointerEnteredPanel : .pointerExitedPanel)
     }
 
     private func tracked(_ event: OverlayEvent) {
@@ -328,6 +384,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
         if case .screenLocked = event { immediatePresentation = true }
         defer { immediatePresentation = previousImmediate }
         let wasInteractive = state.presentation == .interactive
+        let previousPresentation = state.presentation
         let restorePID = NSApp.isActive && panel.isKeyWindow ? priorFrontmostPID : nil
         if case .activate = event {
             if state.presentation == .interactive && !panel.isKeyWindow && pendingActivation == nil {
@@ -341,13 +398,27 @@ final class OverlayController: NSObject, NSWindowDelegate {
         }
         switch event {
         case .focusLost, .screenLocked, .hide:
+            presentationRevision &+= 1
             cancelPendingActivation()
             priorFrontmostPID = nil
+        case .activate:
+            presentationRevision &+= 1
         default:
             break
         }
         let effects = state.send(event, now: ProcessInfo.processInfo.systemUptime)
+        if previousPresentation != .collapsed && state.presentation == .collapsed {
+            presentationRevision &+= 1
+        }
         apply(effects)
+        switch event {
+        case .hide, .screenLocked:
+            externalDragGeneration &+= 1
+            externalDragExitTimer?.invalidate()
+            externalDragExitTimer = nil
+            setInteractionLock("external-drag", false)
+        default: break
+        }
         if case .screenLocked = event {
             // A lock can arrive after the reducer collapsed but while its visual
             // retraction is still running. Always finish that animation now.
@@ -497,7 +568,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
         guard resizeGesture != nil else { return }
         resizeGesture = nil
         if let userPanelSize { onTerminalPanelSizeCommit?(userPanelSize) }
-        setInteractionLock("resize", false)
+        finishPointerInteraction("resize")
     }
 
     private func apply(_ effects: [OverlayEffect]) {
@@ -658,7 +729,6 @@ final class OverlayController: NSObject, NSWindowDelegate {
     private func placeOnSelectedScreen() {
         guard let screen = selectedScreen() else { return }
         let displayID = Self.displayID(for: screen)
-        if state.targetDisplayID != displayID { send(.displayChanged(displayID)) }
         var geometry = DisplayGeometry(screenFrame: screen.frame,
                                        visibleFrame: screen.visibleFrame,
                                        safeAreaTop: screen.safeAreaInsets.top,
@@ -668,7 +738,10 @@ final class OverlayController: NSObject, NSWindowDelegate {
         geometry.panelGap = 0
         geometry.userPanelSize = userPanelSize
         let layout = geometry.layout()
-        if let old = self.layout, old.panelFrame == layout.panelFrame,
+        let moved = self.layout?.panelFrame != layout.panelFrame || self.layout?.triggerFrame != layout.triggerFrame
+        let placementChanged = state.targetDisplayID != displayID || moved
+        if placementChanged { send(.displayChanged(displayID)) }
+        if !placementChanged, let old = self.layout, old.panelFrame == layout.panelFrame,
            old.triggerFrame == layout.triggerFrame, old.backingScale == layout.backingScale { return }
         self.layout = layout
         let notched = layout.notchFrame != nil
@@ -683,6 +756,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
         renderMotionFrame(motion.value, reducedMotion: reduceMotion)
         if state.presentation == .collapsed { finishCollapse() }
         updateTriggerAppearance()
+        if placementChanged { reconcilePointerAfterPlacement() }
     }
 
     private func selectedScreen() -> NSScreen? {

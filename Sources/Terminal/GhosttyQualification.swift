@@ -453,6 +453,82 @@ enum HarnessQualification {
             try await Task.sleep(for: .milliseconds(450))
             try check("UX-09 native lock", overlay.panel.isVisible && !overlay.panel.isKeyWindow, "A presentation lock kept the actual panel visible through focus loss")
             overlay.setInteractionLock("fixture-modal", false)
+            try await waitFor({ !overlay.panel.isVisible }, timeout: 3, description: "dialog unlock with pointer outside")
+            try check("Dialog unlock settles unfocused preview", overlay.state.presentation == .collapsed,
+                          "The last dialog lock releases a focus-lost preview even without a new pointer exit")
+
+            overlay.activate()
+            overlay.send(.pointerEnteredPanel)
+            overlay.send(.pointerExitedPanel)
+            overlay.send(.displayChanged(overlay.state.targetDisplayID))
+            try await waitFor({ !overlay.panel.isVisible }, description: "display change retains exit")
+            try check("Display change retains minimise", overlay.state.presentation == .collapsed,
+                          "A supplied display-change event does not strand the pending native panel collapse")
+
+            overlay.hide(restoreFocus: false)
+            overlay.send(.pointerEnteredTrigger)
+            overlay.send(.displayChanged(overlay.state.targetDisplayID))
+            overlay.send(.pointerEnteredTrigger)
+            try await waitFor { overlay.state.presentation == .preview }
+            try check("Hover recovers after display change", overlay.panel.isVisible && !overlay.state.ownsFocus,
+                          "Fresh pointer containment after a supplied display change starts a new focus-free dwell")
+
+            overlay.hide(restoreFocus: false)
+            overlay.activate()
+            try await waitFor { overlay.panel.isKeyWindow && !overlay.isAnimating }
+            let searchField = NSTextField(frame: NSRect(x: 20, y: 20, width: 180, height: 24))
+            overlay.panel.contentView?.addSubview(searchField)
+            overlay.panel.makeFirstResponder(searchField)
+            overlay.send(.pointerEnteredPanel)
+            overlay.send(.pointerExitedPanel)
+            let fieldKey = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                                           timestamp: ProcessInfo.processInfo.systemUptime,
+                                           windowNumber: overlay.panel.windowNumber, context: nil,
+                                           characters: "x", charactersIgnoringModifiers: "x",
+                                           isARepeat: false, keyCode: 7)!
+            overlay.panel.sendEvent(fieldKey)
+            try await Task.sleep(for: .milliseconds(450))
+            try check("Text controls retain typing grace", overlay.state.presentation == .interactive
+                          && searchField.stringValue == "x",
+                          "A key delivered to a native text field postpones pointer-exit collapse without redirecting input into Ghostty")
+            overlay.panel.makeFirstResponder(session.view)
+            searchField.removeFromSuperview()
+            try await waitFor({ !overlay.panel.isVisible }, timeout: 3, description: "text-control typing grace ends")
+
+            overlay.hide(restoreFocus: false)
+            let outside = NSPoint(x: overlay.layout!.panelFrame.minX - 30,
+                                  y: overlay.layout!.panelFrame.minY - 30)
+            overlay.pointerLocationForFixture = outside
+            overlay.externalDragChanged(true)
+            overlay.externalDragChanged(false)
+            // Moving from the trigger to the panel must cancel the old exit.
+            try await Task.sleep(for: .milliseconds(180))
+            overlay.externalDragChanged(true)
+            try await Task.sleep(for: .milliseconds(400))
+            try check("External drag handoff retains lock", overlay.panel.isVisible
+                          && overlay.state.interactionLocks.contains("external-drag"),
+                          "Re-entering another destination invalidates the previous delayed drag unlock")
+            overlay.externalDragChanged(false)
+            try await waitFor({ !overlay.panel.isVisible }, description: "cancelled external drag outside")
+            try check("Cancelled drag minimises outside", overlay.state.presentation == .collapsed
+                          && !overlay.state.interactionLocks.contains("external-drag"),
+                          "A supplied outside drag endpoint collapses the panel without ordinary mouse-exit events")
+
+            overlay.pointerLocationForFixture = NSPoint(x: overlay.layout!.panelFrame.midX,
+                                                        y: overlay.layout!.panelFrame.midY)
+            overlay.externalDragChanged(true)
+            try await waitFor { !overlay.isAnimating }
+            overlay.externalDragChanged(false)
+            try await Task.sleep(for: .milliseconds(800))
+            try check("Drop inside remains open", overlay.state.presentation == .interactive
+                          && overlay.state.pointerInPanel && overlay.panel.isVisible
+                          && !overlay.state.interactionLocks.contains("external-drag"),
+                          "A supplied inside endpoint keeps the panel open after its drag lock is released")
+            overlay.hide(restoreFocus: false)
+            overlay.pointerLocationForFixture = nil
+            try check("Visibility recovery retains session", session.surface == surface
+                          && ghostty_surface_foreground_pid(surface!) == pid,
+                          "Dialog, display and drag recovery preserve the original Ghostty surface and shell")
             overlay.hide(restoreFocus: false)
             for _ in 0..<200 {
                 overlay.activate()

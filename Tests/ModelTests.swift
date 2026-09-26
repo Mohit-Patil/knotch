@@ -10,6 +10,9 @@ struct ModelTests {
         testInteractiveExitAndTypingGrace()
         testInteractiveLocksAndKeyboardOnlyAccess()
         testDialogReactivationRetainsExit()
+        testPointerInteractionEnded()
+        testDisplayExitRecovery()
+        testFocusLossAndPinReleaseRecovery()
         testDisplayAndNotifications()
         testGeometry()
         testRandomizedTransitions()
@@ -204,6 +207,127 @@ struct ModelTests {
         shortcut.send(.timerFired(999), now: 2)
         expect(shortcut.presentation == .interactive,
                "keyboard-only activation remains open after lock release")
+    }
+
+    static func testPointerInteractionEnded() {
+        var state = OverlayState()
+        state.send(.selectedSessionChanged("running-shell"), now: 0)
+        expect(state.send(.pointerInteractionEnded(inTrigger: false, inPanel: false), now: 0).isEmpty
+               && state.presentation == .collapsed,
+               "drag-end pointer reconciliation cannot reveal a collapsed panel")
+        state.send(.activate, now: 0.1)
+        state.send(.lockAdded("external-drag"), now: 0.2)
+        state.send(.terminalInput, now: 0.3)
+        expect(state.send(.pointerInteractionEnded(inTrigger: false, inPanel: false), now: 0.4).isEmpty,
+               "drag departure records exit without scheduling through a lock")
+        let unlocked = state.send(.lockRemoved("external-drag"), now: 0.5)
+        let token = exitToken(unlocked)
+        expect(exitDeadline(unlocked) >= 1.8,
+               "drag-end exit keeps the typing grace after the lock is removed")
+        state.send(.timerFired(token), now: 1.79)
+        expect(state.presentation == .interactive, "drag-end exit observes typing grace")
+        let collapsed = state.send(.timerFired(token), now: 1.81)
+        expect(state.presentation == .collapsed && collapsed.contains(.releaseFocus)
+               && state.selectedSessionID == "running-shell",
+               "drag-end exit minimises while preserving the selected session")
+
+        state.send(.activate, now: 2)
+        expect(state.send(.pointerInteractionEnded(inTrigger: false, inPanel: true), now: 2.1).isEmpty,
+               "drag ending inside panel keeps it open")
+        let outside = state.send(.pointerInteractionEnded(inTrigger: false, inPanel: false), now: 2.2)
+        expect(exitDeadline(outside) >= 2.55, "later departure starts ordinary exit grace")
+    }
+
+    static func testDisplayExitRecovery() {
+        var state = OverlayState()
+        state.send(.activate, now: 0)
+        state.send(.pointerEnteredPanel, now: 0.1)
+        let old = exitToken(state.send(.pointerExitedPanel, now: 0.2))
+        let moved = state.send(.displayChanged("external"), now: 0.3)
+        let replacement = exitToken(moved)
+        expect(moved.contains(.cancelTimers) && replacement != old
+               && !state.pointerInTrigger && !state.pointerInPanel,
+               "display reassignment invalidates stale tracking and retains a real exit")
+        state.send(.timerFired(old), now: 0.7)
+        expect(state.presentation == .interactive, "old display timer cannot collapse the panel")
+        let collapsed = state.send(.timerFired(replacement), now: 0.7)
+        expect(state.presentation == .collapsed && collapsed.contains(.releaseFocus),
+               "display reassignment cannot strand an interactive panel after exit")
+
+        var inside = OverlayState()
+        inside.send(.activate, now: 1)
+        inside.send(.pointerEnteredPanel, now: 1.1)
+        let pending = inside.send(.displayChanged("external"), now: 1.2)
+        let token = exitToken(pending)
+        let reentry = inside.send(.pointerEnteredPanel, now: 1.21)
+        expect(reentry.contains(.cancelTimers), "fresh display containment cancels fallback exit")
+        inside.send(.timerFired(token), now: 2)
+        expect(inside.presentation == .interactive, "pointer on relocated panel keeps it open")
+
+        var hover = OverlayState()
+        let stale = hoverToken(hover.send(.pointerEnteredTrigger, now: 3))
+        hover.send(.displayChanged("external"), now: 3.1)
+        expect(!hover.pointerInTrigger, "display change clears old trigger tracking")
+        let fresh = hoverToken(hover.send(.pointerEnteredTrigger, now: 3.11))
+        hover.send(.timerFired(stale), now: 3.5)
+        expect(hover.presentation == .collapsed, "old hover timer stays invalid")
+        hover.send(.timerFired(fresh), now: 3.5)
+        expect(hover.presentation == .preview && !hover.ownsFocus,
+               "fresh pointer containment can reopen hover preview without focus")
+
+        var lockedHover = OverlayState()
+        let beforeLock = hoverToken(lockedHover.send(.pointerEnteredTrigger, now: 3))
+        lockedHover.send(.lockAdded("dialog"), now: 3.1)
+        lockedHover.send(.timerFired(beforeLock), now: 3.5)
+        expect(lockedHover.presentation == .collapsed, "lock invalidates an in-flight hover")
+        let afterLock = hoverToken(lockedHover.send(.lockRemoved("dialog"), now: 3.6))
+        lockedHover.send(.timerFired(afterLock), now: 3.8)
+        expect(lockedHover.presentation == .preview,
+               "final lock release restores hover dwell while pointer remains on trigger")
+
+        var keyboard = OverlayState()
+        keyboard.send(.activate, now: 4)
+        expect(keyboard.send(.displayChanged("external"), now: 4.1).isEmpty,
+               "display change invents no exit for keyboard-only activation")
+        keyboard.send(.timerFired(999), now: 5)
+        expect(keyboard.presentation == .interactive,
+               "keyboard-only opening survives display change until pointer enters and exits")
+    }
+
+    static func testFocusLossAndPinReleaseRecovery() {
+        var dialog = OverlayState()
+        dialog.send(.activate, now: 0)
+        dialog.send(.lockAdded("dialog"), now: 0.1)
+        dialog.send(.focusLost, now: 0.2)
+        expect(dialog.presentation == .preview && !dialog.ownsFocus,
+               "dialog holds presentation after keyboard focus moves away")
+        let unlocked = dialog.send(.lockRemoved("dialog"), now: 0.3)
+        let token = exitToken(unlocked)
+        dialog.send(.timerFired(token), now: 0.64)
+        expect(dialog.presentation == .preview, "unlock observes ordinary exit grace")
+        dialog.send(.timerFired(token), now: 0.66)
+        expect(dialog.presentation == .collapsed,
+               "last dialog lock release settles an unfocused preview outside the panel")
+
+        var preview = OverlayState()
+        reveal(&preview, at: 1)
+        let old = exitToken(preview.send(.pointerExitedTrigger, now: 2))
+        let focus = preview.send(.focusLost, now: 2.1)
+        let replacement = exitToken(focus)
+        expect(replacement != old, "focus loss re-arms a canceled preview exit")
+        preview.send(.timerFired(old), now: 3)
+        expect(preview.presentation == .preview, "old preview exit remains stale")
+        preview.send(.timerFired(replacement), now: 3)
+        expect(preview.presentation == .collapsed, "preview still minimises after focus loss")
+
+        var pin = OverlayState()
+        pin.send(.pinChanged(true), now: 4)
+        expect(pin.presentation == .preview, "pin reveals preview")
+        let unpinned = pin.send(.pinChanged(false), now: 5)
+        let unpinToken = exitToken(unpinned)
+        pin.send(.timerFired(unpinToken), now: 5.36)
+        expect(pin.presentation == .collapsed,
+               "unpinning an outside preview cannot leave it open indefinitely")
     }
 
     static func testDisplayAndNotifications() {

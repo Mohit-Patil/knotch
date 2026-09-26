@@ -322,8 +322,22 @@ enum ClipboardQualification {
             } catch {
                 check("Drop inserts without Return", false, error.localizedDescription)
             }
+            board.clearContents()
+            let staleDropText = "KNOTCH_CANCELLED_DROP_\(UUID().uuidString)"
+            board.setString(staleDropText, forType: .string)
+            restored.captureChange()
+            coordinator.showClipboard()
+            coordinator.hoverClipboardTabForFixture(sessionID: session.id)
+            let staleDropAccepted = restored.entries.first.map {
+                coordinator.acceptClipboardDropForFixture(entryID: $0.id, sessionID: session.id)
+            } ?? false
             coordinator.overlay?.hide(restoreFocus: false)
             coordinator.overlay?.settlePresentationForFixture()
+            try? await Task.sleep(for: .milliseconds(100))
+            check("Hidden panel cancels queued Clipboard drop", staleDropAccepted
+                  && coordinator.overlay?.state.presentation == .collapsed
+                  && !HarnessQualification.screen(session).contains(staleDropText),
+                  "A queued insertion cannot reopen a panel hidden after the drop was accepted")
             coordinator.overlay?.externalDragChanged(true)
             coordinator.overlay?.settlePresentationForFixture()
             check("External drag opens notch", coordinator.overlay?.state.presentation == .interactive
@@ -423,6 +437,21 @@ enum ClipboardQualification {
                   && newSession?.isRunning == true
                   && insertedIntoNew,
                   "A Clipboard image dragged onto New Tab starts a real Ghostty shell and inserts its private path without Return")
+            coordinator.showClipboard()
+            let staleNewTabAccepted = savedImage.map {
+                coordinator.acceptClipboardDropInNewTabForFixture(entryID: $0.id)
+            } ?? false
+            let staleNewSession = coordinator.store.session as? GhosttySession
+            coordinator.overlay?.hide(restoreFocus: false)
+            coordinator.overlay?.settlePresentationForFixture()
+            try? await Task.sleep(for: .milliseconds(1_300))
+            check("Hidden panel cancels delayed New Tab insertion", staleNewTabAccepted
+                  && staleNewSession?.isRunning == true
+                  && coordinator.overlay?.state.presentation == .collapsed
+                  && (staleNewSession.map { !HarnessQualification.screen($0).contains(savedImage?.id.uuidString ?? "NO_ENTRY") } ?? false),
+                  "Shell creation remains accepted, but its delayed insertion does not reopen a hidden panel")
+            staleNewSession?.view.removeFromSuperview()
+            if let id = staleNewSession?.id { coordinator.store.closeAfterConfirmation(id: id) }
             newSession?.view.removeFromSuperview()
             if let id = newSession?.id { coordinator.store.closeAfterConfirmation(id: id) }
         } else {

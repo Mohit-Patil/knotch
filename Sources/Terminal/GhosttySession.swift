@@ -32,6 +32,7 @@ final class GhosttySession: TerminalSession {
     private(set) var status = "Session starting"
     private(set) var isRunning = false
     var onStatusChange: (() -> Void)?
+    var onSystemDialogChange: ((Bool) -> Void)?
     var onCloseRequested: (() -> Void)?
     var onNewTabRequested: (() -> Void)?
     var onActivate: (() -> Void)? { didSet { nativeView.onActivate = onActivate } }
@@ -191,6 +192,8 @@ final class GhosttySession: TerminalSession {
             alert.informativeText = "This paste contains multiple lines or control characters. The terminal program may interpret them as commands."
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Paste")
+            self.onSystemDialogChange?(true)
+            defer { self.onSystemDialogChange?(false) }
             let allowed = alert.runModal() == .alertSecondButtonReturn
             guard self.surface == surface, let pending = self.pendingPastes.removeValue(forKey: requestID) else { return }
             defer { self.publishInteractionLock() }
@@ -225,6 +228,8 @@ final class GhosttySession: TerminalSession {
             alert.messageText = "Allow this terminal program to replace the clipboard?"
             alert.addButton(withTitle: "Deny")
             alert.addButton(withTitle: "Allow once")
+            self.onSystemDialogChange?(true)
+            defer { self.onSystemDialogChange?(false) }
             let allowed = alert.runModal() == .alertSecondButtonReturn
             guard self.pendingClipboardWrites.remove(requestID) != nil else { return }
             defer { self.publishInteractionLock() }
