@@ -1,6 +1,6 @@
 # Knotch
 
-Knotch is a local macOS alpha that keeps independent Ghostty terminal sessions near the top of the screen. When collapsed on a MacBook, only the hardware notch is visible; a small transparent hover target surrounds it without drawing an extra lip. The expanded panel starts at the same screen edge, placing its title and controls beside the camera and terminal content directly below it. There is no separate handle line. On displays without a cutout, the compact handle occupies the measured menu-bar band at the top center and the panel expands from that edge. Terminal, Clipboard, Settings, and the empty state share your chosen panel size. A compact Clipboard shelf can stay beneath the terminal. Hiding the panel or switching tabs keeps the shells running. Closing a tab ends only that session; quitting ends them all.
+Knotch is a local macOS alpha with a native toolbox, independent Ghostty terminal sessions, and local Clipboard history near the top of the screen. When collapsed on a MacBook, only the hardware notch is visible; a small transparent hover target surrounds it without drawing an extra lip. The expanded panel starts at the same screen edge, placing its title and controls beside the camera and terminal content directly below it. There is no separate handle line. On displays without a cutout, the compact handle occupies the measured menu-bar band at the top center and the panel expands from that edge. Terminal, Tools, Clipboard, Settings, and the empty state share your chosen panel size. A compact Clipboard shelf can stay beneath the terminal. Hiding the panel or switching tabs keeps the shells running. Closing a tab ends only that session; quitting ends them all.
 
 The app is built for Apple Silicon macOS 26 or later. The qualified local toolchain is Xcode 27.0 with macOS SDK 27.0, Swift 6.4, Zig 0.16.0, and XcodeGen 2.46.0. The full Ghostty core is pinned to commit `982fe90d941e4b4aab4905ffcbcfdea60bd83343`; its internal embedder API is revision-bound.
 
@@ -16,7 +16,7 @@ open .build/app/Build/Products/Release/Knotch.app
 
 The first command fetches and builds the pinned engine. `scripts/build.sh` generates the Xcode project, builds a Release app, bundles its own Ghostty shell integration and terminfo, and signs it locally. No separate Ghostty.app is needed. The app appears in the menu bar as `>_`; choose **Open Project…** or **Open Home Shell** to start a login shell in a new tab. You can type an installed `codex`, `claude`, or another terminal command yourself. The **Settings** tab inside the expanded panel lets you record a shortcut, turn hover reveal off, and choose the shared panel width and height. There is no global shortcut enabled by default.
 
-The overlay controller passed a native test in which hover preview left another editor key; cross-app physical hover is still untested. Click the panel to type. Moving away minimises after 350 ms, postponed until 1.5 seconds after the last input. Selection, composition and dialogs hold it open. Shortcut-only opening stays open until the pointer enters and leaves. **Minimise Terminal** retains the session; a manually operated accessory-mode session kept the same shell PID after minimise and reopen. **Close Session…** asks before ending a running shell, and quitting warns that sessions do not survive app exit. A shortcut can be recorded, but global delivery has not been qualified; the menu-bar handle remains available. Normal `open` launch and direct execution of `Knotch.app/Contents/MacOS/Knotch` both work.
+The overlay controller passed a native test in which hover preview left another editor key; cross-app physical hover is still untested. Click the panel to type. Moving away minimises after 350 ms, postponed until 1.5 seconds after the last input. Selection, composition and dialogs hold it open. Shortcut-only opening stays open until the pointer enters and leaves. **Minimise Knotch** retains the session; a manually operated accessory-mode session kept the same shell PID after minimise and reopen. **Close Session…** asks before ending a running shell, and quitting warns that sessions do not survive app exit. A shortcut can be recorded, but global delivery has not been qualified; the menu-bar handle remains available. Normal `open` launch and direct execution of `Knotch.app/Contents/MacOS/Knotch` both work.
 
 For the ordinary resizable engine harness and local model tests:
 
@@ -24,6 +24,7 @@ For the ordinary resizable engine harness and local model tests:
 scripts/build.sh --test
 .build/test-app/Build/Products/Release/Knotch.app/Contents/MacOS/Knotch --harness
 scripts/test-models.sh
+scripts/test-tools.sh
 scripts/test-native.sh all
 ```
 
@@ -31,9 +32,27 @@ In the harness, use **Open Project…** or **Home Shell**. A direct fixture dire
 
 Run `scripts/test-native.sh settings` for the focused Settings/session and display-edge fixture. It uses the connected display's AppKit geometry. Model tests cover notched, plain, hidden-menu, tiny, and 3840×2160 layouts. Full physical multi-monitor switching and hover behavior still need owner-side qualification.
 
-This alpha supports multiple live sessions, an in-panel Clipboard tab, and an in-panel Settings tab. Command presets, automatic agent launch, and session restoration are not implemented. The manual Codex and Claude Code checks reached their trust prompts and exercised navigation and exit; no approval, authentication flow, model request, or paid action was tested. Nothing has been pushed or prepared for distribution.
+This alpha supports multiple live sessions and in-panel Tools, Clipboard, and Settings tabs. Command presets, automatic agent launch, and session restoration are not implemented. The manual Codex and Claude Code checks reached their trust prompts and exercised navigation and exit; no approval, authentication flow, model request, or paid action was tested. Nothing has been pushed or prepared for distribution.
 
 The September 25 follow-up corrects the detached position and launch behavior shown in the owner screenshot. See the [notch and minimise correction](docs/decisions/0002-notch-attachment-and-minimise.md) for exact behavior and test boundaries.
+
+### Native tools
+
+Open **Tools** from the fixed tab group or menu-bar menu. Search the 19 tools or star favourites; favourites persist across launches. Tools uses the same chosen panel size as Terminal, Clipboard, and Settings. Returning to a terminal retains its existing Ghostty surface, shell, and output.
+
+- **Focus:** Quick Notes, local To-dos, Focus & Timers, Calendar, Reminders, and Teleprompter.
+- **Everyday:** File Shelf, Now Playing, Mirror, Ask Knotch, and AI Usage.
+- **Utilities:** Weather, Stocks, Convert, Emoji, Shortcuts, System Stats, Keep Awake, and Sound.
+
+Notes, to-dos, timer state, and teleprompter text are saved locally. Countdown and Pomodoro presets continue while the panel is hidden; no notification or automatic break cycle is added. File Shelf keeps its own bounded copies with configurable retention, export, Quick Look, and an AirDrop action. It is separate from Clipboard's file references.
+
+Calendar, Reminders, and Mirror ask for access only when you choose to connect or start them. Now Playing explicitly connects to an already-running Music or Spotify app through public AppleScript controls; it is not a system-wide Now Playing service. Hiding Tools stops camera preview, media/calendar/statistics polling, and teleprompter scrolling; a running timer or Keep Awake assertion retains its intended lifetime. Sound offers output volume/mute where the device supports them and an opt-in notch volume HUD.
+
+Ask Knotch uses Apple's Foundation Models on-device model when Apple Intelligence is available. Conversations stay in memory, and the model receives no file, terminal, or network tools. **AI Usage → Refresh** reads Codex account limits through the installed, authenticated `codex app-server`; Claude Code and GitHub Copilot entries are manually recorded observations, not live integrations. No credential files are inspected.
+
+Weather uses a chosen city's Open-Meteo forecast without location permission. Currency conversion explicitly fetches dated Frankfurter rates. Stocks requires your Alpha Vantage key, stored in Keychain, and shows end-of-day quotes rather than live prices. Shortcuts lists and runs your existing macOS Shortcuts when you choose one.
+
+Qualification is narrower than implementation: model/tool tests and 117 native regression checks passed, along with a public weather/currency data probe, actual system-stat readings, a hide/reopen timer check, manual usage-sheet and file-picker cancellation, and a real on-device AI greeting. Camera capture, connected Calendar/Reminders, playback, stock quotes, AirDrop, actual Shortcut execution, power assertions, audio writes, and the volume HUD remain untested. See the [feature map](docs/omninotch-feature-map.md), [toolbox decision](docs/decisions/0018-native-toolbox.md), and [current qualification](docs/test-results/acceptance-matrix.md#native-toolbox-follow-up--september-26).
 
 ### Ghostty configuration
 
@@ -45,9 +64,9 @@ Knotch clears an inherited `NO_COLOR` flag before engine initialization: launchi
 
 ### Terminal tabs
 
-The tab strip sits across the top of the expanded notch, below the camera-safe header. Click **+** or press **Command-T** for a new shell in the selected tab's original project directory; the folder-plus control opens a project in another tab. Click a terminal tab or use **Command-1…9** to select it. Terminal tabs scroll independently; **Clipboard** and **Settings** remain in a fixed group on the right. Switching to either leaves every shell running.
+The tab strip sits across the top of the expanded notch, below the camera-safe header. Click **+** or press **Command-T** for a new shell in the selected tab's original project directory; the folder-plus control opens a project in another tab. Click a terminal tab or use **Command-1…9** to select it. Terminal tabs scroll independently; **Tools**, **Clipboard**, and **Settings** remain in a fixed group on the right. Switching to either leaves every shell running.
 
-Terminal, Clipboard, Settings, and the empty state all use the same 720×550-point default panel. To resize it, drag the terminal's bottom edge vertically or either lower corner diagonally. The side edges do not resize. The top remains attached to the screen edge and the panel stays centered where the display allows it. **Settings → Panel size** also has width and height sliders and **Reset to display default**. Your chosen size applies to every tab, is saved across launches, and is clamped to the usable area when the display changes.
+Terminal, Tools, Clipboard, Settings, and the empty state all use the same 720×550-point default panel. To resize it, drag the terminal's bottom edge vertically or either lower corner diagonally. The side edges do not resize. The top remains attached to the screen edge and the panel stays centered where the display allows it. **Settings → Panel size** also has width and height sliders and **Reset to display default**. Your chosen size applies to every tab, is saved across launches, and is clamped to the usable area when the display changes.
 
 Ghostty's terminal title events name each tab, with its directory as the initial fallback. Double-click or right-click a tab to rename it; clearing the name restores automatic titles. Each tab keeps its own live process, output and scroll position when you switch or minimise. The icon and accessible label distinguish a running shell from an ended session. These are session observations, not claims that an AI task is finished; the terminal's retained output remains the work record.
 

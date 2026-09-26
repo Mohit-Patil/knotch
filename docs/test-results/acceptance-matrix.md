@@ -230,3 +230,15 @@ PASS: Model tests, test/Release builds, [49 native overlay checks](visibility-ov
 PASS (installed UI): Restarted Release opens from the idle target and minimises back to idle; no shell was created. `/Applications/Knotch.app` passes signature verification and matches the Release executable SHA-256 `eea48e3586e7143e67d6a429f0c01949708312305e6d575bd213daaa55487736`. Environment: macOS 26.6.2 (25G83), arm64, Xcode 27.0 (27A266a), SDK 27.0, Swift 6.4; unchanged Ghostty revision `982fe90d941e4b4aab4905ffcbcfdea60bd83343`.
 
 NOT_RUN: Physical monitor changes, full-screen Spaces transitions, exhaustive cross-app pointer/drag sequences, asynchronous floating screenshot promise fulfillment, and the actual Ghostty paste/clipboard-write consent dialogs. The controller fixtures supply pointer/display/lock events; the NSTextField key is delivered through native panel dispatch. These passes do not upgrade the original physical acceptance statuses. A hypothetical lost mouse-up or composition-release lock was not reproduced and remains an audit limitation, not a confirmed defect.
+
+## Native toolbox follow-up — September 26
+
+Added 19 searchable native tools with saved favourites beside the retained Ghostty terminal, Clipboard and Settings. The [feature map](../omninotch-feature-map.md) records exact implementation and limitations; [decision 0018](../decisions/0018-native-toolbox.md) explains lifecycle and provider boundaries.
+
+Passed `scripts/test-models.sh`, `scripts/test-tools.sh`, Release/test builds, and 117 native checks: [21 Settings/Tools](toolbox-settings.json), [49 overlay](toolbox-overlay.json), [47 Clipboard](toolbox-clipboard.json). The 21 Settings/Tools checks were repeated successfully after compact favourites and bounded Mirror preview layout changes. These exercise real Ghostty session retention through tool changes and native sheet/dialog holds, alongside existing overlay/clipboard regression scopes.
+
+Actual runtime checks: public London weather search/forecast and dated currency request; installed Codex quota refresh; visible system statistics; timer continuing after minimise/reopen; on-device AI greeting generation; manual usage sheet and file picker shown above the overlay and canceled. Timer and chat smoke-test state were reset.
+
+Not run: camera capture, EventKit permissions/data/writes, Music/Spotify automation/playback, keyed stock quotes, AirDrop delivery, user Shortcut execution, power assertions, audio changes or automatic volume HUD. Claude/Copilot live quota, system-wide Now Playing, live stock pricing, timer notifications/automatic cycles are not implemented. Existing physical hover, global hotkey, VoiceOver, multi-monitor and performance qualification limits still apply. No blanket feature-parity claim.
+
+Final Release installed at `/Applications/Knotch.app`, ad-hoc signature verified, restarted and inspected. Installed executable matches the build SHA-256 `a43f215d38ccdb34d1a22d183b8243110c257201adcafd7d7e4044f9aed173d3`. Compact favourites and fitted Mirror controls were visually checked; camera stayed off. See [installation receipt](toolbox-install.json).

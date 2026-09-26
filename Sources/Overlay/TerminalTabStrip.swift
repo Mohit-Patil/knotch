@@ -10,6 +10,7 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
         let running: Bool
         var isSettings = false
         var isClipboard = false
+        var isTools = false
     }
     private final class TabButton: NSButton {
         var sessionID: UUID?
@@ -87,7 +88,7 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
     private var displayedItems: [Item] = []
     private var sessionContentWidth: CGFloat = 0
     private var shouldRevealSelection = false
-    private let utilityWidth: CGFloat = 202
+    private var utilityWidth: CGFloat = 202
     private let sessionWidth: CGFloat = 150
 
     override init(frame: NSRect) {
@@ -118,11 +119,12 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
         utilityGroup.subviews.filter { $0 !== utilityDivider }.forEach { $0.removeFromSuperview() }
         selectedView = nil
         var sessionX: CGFloat = 4
+        var utilityX: CGFloat = 8
         for item in items {
-            let isUtility = item.isSettings || item.isClipboard
+            let isUtility = item.isSettings || item.isClipboard || item.isTools
             let active = item.id == selected
-            let width: CGFloat = item.isClipboard ? 104 : (item.isSettings ? 80 : sessionWidth)
-            let x: CGFloat = item.isClipboard ? 8 : (item.isSettings ? 116 : sessionX)
+            let width: CGFloat = item.isClipboard ? 104 : (item.isSettings ? 80 : (item.isTools ? 74 : sessionWidth))
+            let x: CGFloat = isUtility ? utilityX : sessionX
             let cell = NSView(frame: NSRect(x: x, y: 5, width: width, height: 28))
             cell.wantsLayer = true
             cell.layer?.cornerRadius = 7
@@ -137,11 +139,11 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
             button.setButtonType(.toggle)
             button.state = active ? .on : .off
             button.cell?.lineBreakMode = .byTruncatingTail
-            button.image = NSImage(systemSymbolName: item.isSettings ? "gearshape" : (item.isClipboard ? "doc.on.clipboard" : (item.running ? "terminal" : "stop.circle")), accessibilityDescription: nil)
+            button.image = NSImage(systemSymbolName: item.isTools ? "square.grid.2x2" : (item.isSettings ? "gearshape" : (item.isClipboard ? "doc.on.clipboard" : (item.running ? "terminal" : "stop.circle"))), accessibilityDescription: nil)
             button.imagePosition = .imageLeading
             button.contentTintColor = active ? .white : .secondaryLabelColor
-            let status = item.isSettings ? "Preferences" : (item.isClipboard ? "Clipboard history" : (item.running ? "Shell running" : "Session ended"))
-            button.toolTip = item.isSettings ? "Settings inside Knotch" : (item.isClipboard ? "Clipboard history inside Knotch" : "\(item.title)\n\(item.directory)\n\(status) · Double-click to rename")
+            let status = item.isTools ? "Everyday utilities" : item.isSettings ? "Preferences" : (item.isClipboard ? "Clipboard history" : (item.running ? "Shell running" : "Session ended"))
+            button.toolTip = item.isTools ? "Tools inside Knotch" : item.isSettings ? "Settings inside Knotch" : (item.isClipboard ? "Clipboard history inside Knotch" : "\(item.title)\n\(item.directory)\n\(status) · Double-click to rename")
             button.setAccessibilityLabel("\(item.title), \(status)\(active ? ", selected" : "")")
             button.target = self
             button.action = #selector(selectTab(_:))
@@ -188,13 +190,14 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
                 underline.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.85).cgColor
                 cell.addSubview(underline)
             }
-            if isUtility { utilityGroup.addSubview(cell) }
+            if isUtility { utilityGroup.addSubview(cell); utilityX += width + 6 }
             else {
                 document.addSubview(cell)
                 if active { selectedView = cell }
                 sessionX += sessionWidth + 6
             }
         }
+        utilityWidth = utilityX
         sessionContentWidth = max(0, sessionX - 2)
         shouldRevealSelection = shouldRevealSelection || changedSelection
         needsLayout = true

@@ -12,6 +12,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var emptyView: NSView?
     let statusLabel = NSTextField(labelWithString: "Terminal")
     private var closeButton: NSButton?
+    private var pinButton: NSButton?
+    private weak var contentIcon: NSImageView?
     let container = NSView()
     private lazy var workspace = TerminalWorkspaceView(content: container)
     private var shelfView: NSHostingView<ClipboardShelfView>?
@@ -21,6 +23,11 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let tabs = TerminalTabStrip()
     private let settingsID = UUID()
     private let clipboardID = UUID()
+    private let toolsID = UUID()
+    private var toolsSelected = false
+    private var toolsView: NSView?
+    private var toolsStore: ToolsStore?
+    private let volumeHUD = VolumeHUDController()
     private var settingsSelected = false
     private var clipboardSelected = false
     private var settingsView: NSView?
@@ -39,6 +46,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var quitting = false
 
     #if HARNESS_TESTS
+    var toolsStoreForFixture: ToolsStore? { toolsStore }
+    var isToolsSelectedForFixture: Bool { toolsSelected }
     func useClipboardForFixture(_ history: ClipboardHistory) { clipboard?.stop(); clipboard = history }
     var isClipboardSelectedForFixture: Bool { clipboardSelected }
     var shelfHeightForFixture: CGFloat { workspace.visibleShelfHeight }
@@ -121,7 +130,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let controller = OverlayController(content: makeContent(),
                                                userPanelSize: savedTerminalPanelSize,
                                                sessionProvider: { [weak self] in
-                guard let self, !self.settingsSelected, !self.clipboardSelected else { return nil }
+                guard let self, !self.settingsSelected, !self.clipboardSelected, !self.toolsSelected else { return nil }
                 return self.store.session
             })
             overlay = controller
@@ -130,7 +139,12 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.acceptExternalDrop(board, destination: .clipboard) ?? false
             }
             controller.onExternalDragToHandle = { [weak self] in self?.showClipboard() }
-            controller.onPresentationChange = { [weak self] _ in self?.updateStatus() }
+            controller.onPresentationChange = { [weak self] presentation in
+                guard let self else { return }
+                self.toolsStore?.setVisible(self.toolsSelected && presentation != .collapsed)
+                if presentation != .collapsed { self.volumeHUD.hide() }
+                self.updateStatus()
+            }
             controller.onTerminalPanelSizeCommit = { [weak self] size in
                 self?.setTerminalPanelSize(size)
             }
@@ -146,6 +160,9 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             let hover = UserDefaults.standard.object(forKey: "access.hover.v1") as? Bool ?? true
             controller.setHoverEnabled(hover)
+            if !runningQualification && UserDefaults.standard.bool(forKey: "Knotch.showVolumeHUD") {
+                prepareTools()
+            }
             // Launch at the notch. Only a click/shortcut or explicit directory launch activates.
         }
         #if HARNESS_TESTS
@@ -195,14 +212,15 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let menu = NSMenu()
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "Show Terminal", action: #selector(showTerminal), keyEquivalent: "0").target = self
+        appMenu.addItem(withTitle: "Show Knotch", action: #selector(showTerminal), keyEquivalent: "0").target = self
         appMenu.addItem(withTitle: "New Tab", action: #selector(newTab), keyEquivalent: "t").target = self
         appMenu.addItem(withTitle: "Rename Tab…", action: #selector(renameSelectedTab), keyEquivalent: "").target = self
         appMenu.addItem(withTitle: "Open Project…", action: #selector(chooseProject), keyEquivalent: "o").target = self
         appMenu.addItem(withTitle: "Open Home Shell", action: #selector(openHome), keyEquivalent: "").target = self
+        appMenu.addItem(withTitle: "Tools", action: #selector(showTools), keyEquivalent: "").target = self
         appMenu.addItem(withTitle: "Clipboard", action: #selector(showClipboard), keyEquivalent: "").target = self
         appMenu.addItem(withTitle: "Toggle Clipboard Shelf", action: #selector(toggleClipboardShelf), keyEquivalent: "").target = self
-        appMenu.addItem(withTitle: "Minimise Terminal", action: #selector(hideTerminal), keyEquivalent: "h").target = self
+        appMenu.addItem(withTitle: "Minimise Knotch", action: #selector(hideTerminal), keyEquivalent: "h").target = self
         appMenu.addItem(withTitle: "Close Session…", action: #selector(closeSession), keyEquivalent: "w").target = self
         appMenu.addItem(withTitle: "Settings", action: #selector(showAccessSettings), keyEquivalent: ",").target = self
         appMenu.addItem(.separator())
@@ -218,7 +236,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.mainMenu = menu
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem?.button?.title = ">_"
-        statusItem?.button?.setAccessibilityLabel("Knotch terminal")
+        statusItem?.button?.setAccessibilityLabel("Knotch")
         statusItem?.menu = appMenu.copy() as? NSMenu
     }
 
@@ -243,6 +261,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         toolbar.orientation = .horizontal
         toolbar.spacing = 6
         let terminalIcon = NSImageView(image: NSImage(systemSymbolName: "terminal", accessibilityDescription: nil)!)
+        contentIcon = terminalIcon
         terminalIcon.contentTintColor = .secondaryLabelColor
         terminalIcon.setAccessibilityElement(false)
         toolbar.addArrangedSubview(terminalIcon)
@@ -258,7 +277,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             ("plus", "New Tab", #selector(newTab)),
             ("folder.badge.plus", "New Project Tab…", #selector(chooseProject)),
             ("rectangle.bottomthird.inset.filled", "Toggle Clipboard Shelf", #selector(toggleClipboardShelf)),
-            ("chevron.up", "Minimise Terminal", #selector(hideTerminal)),
+            ("pin", "Keep Knotch Open", #selector(togglePinned)),
+            ("chevron.up", "Minimise Knotch", #selector(hideTerminal)),
             ("xmark", "Close Session…", #selector(closeSession))
         ] {
             let button: NSButton
@@ -284,6 +304,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             button.setAccessibilityLabel(title)
             button.widthAnchor.constraint(equalToConstant: 28).isActive = true
             button.heightAnchor.constraint(equalToConstant: 28).isActive = true
+            if action == #selector(togglePinned) { pinButton = button }
             if action == #selector(closeSession) { closeButton = button; button.isEnabled = false }
             if action == #selector(toggleClipboardShelf) { shelfButton = button }
             toolbar.addArrangedSubview(button)
@@ -292,6 +313,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             guard let self else { return }
             if id == self.settingsID { self.showAccessSettings() }
             else if id == self.clipboardID { self.showClipboard() }
+            else if id == self.toolsID { self.showTools() }
             else { self.selectSession(id: id) }
         }
         tabs.onClose = { [weak self] in self?.closeTab(id: $0) }
@@ -368,6 +390,12 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func updateStatus() {
+        let pinned = overlay?.state.isPinned == true
+        pinButton?.image = NSImage(systemSymbolName: pinned ? "pin.fill" : "pin", accessibilityDescription: nil)
+        pinButton?.contentTintColor = pinned ? .controlAccentColor : .secondaryLabelColor
+        pinButton?.toolTip = pinned ? "Allow automatic minimise" : "Keep open while you read or present"
+        pinButton?.setAccessibilityLabel(pinned ? "Unpin Knotch" : "Keep Knotch Open")
+        contentIcon?.image = NSImage(systemSymbolName: toolsSelected ? "square.grid.2x2" : (settingsSelected ? "gearshape" : (clipboardSelected ? "doc.on.clipboard" : "terminal")), accessibilityDescription: nil)
         updateWorkspace()
         tabs.isHidden = false
         tabHeight?.constant = 38
@@ -375,8 +403,15 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .init(id: $0.id, title: $0.displayTitle, directory: $0.directory.path, running: $0.isRunning)
         }
         items.append(.init(id: clipboardID, title: "Clipboard", directory: "", running: false, isClipboard: true))
+        items.append(.init(id: toolsID, title: "Tools", directory: "", running: false, isTools: true))
         items.append(.init(id: settingsID, title: "Settings", directory: "", running: false, isSettings: true))
-        tabs.update(items, selected: settingsSelected ? settingsID : (clipboardSelected ? clipboardID : store.selectedID))
+        tabs.update(items, selected: toolsSelected ? toolsID : (settingsSelected ? settingsID : (clipboardSelected ? clipboardID : store.selectedID)))
+        if toolsSelected {
+            statusLabel.stringValue = "Tools"
+            statusLabel.toolTip = nil
+            closeButton?.isEnabled = false
+            return
+        }
         if settingsSelected {
             statusLabel.stringValue = "Settings"
             statusLabel.toolTip = nil
@@ -402,6 +437,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func attach(_ session: any TerminalSession) {
+        leaveTools()
         if settingsSelected { overlay?.setInteractionLock("settings-recording", false) }
         settingsSelected = false
         clipboardSelected = false
@@ -458,11 +494,11 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         session.onInput = { [weak self] in
-            guard let self, !self.settingsSelected, !self.clipboardSelected, self.store.selectedID == id else { return }
+            guard let self, !self.settingsSelected, !self.clipboardSelected, !self.toolsSelected, self.store.selectedID == id else { return }
             self.overlay?.send(.terminalInput)
         }
         session.onInteractionLock = { [weak self] locked in
-            guard let self, !self.settingsSelected, !self.clipboardSelected, self.store.selectedID == id else { return }
+            guard let self, !self.settingsSelected, !self.clipboardSelected, !self.toolsSelected, self.store.selectedID == id else { return }
             self.overlay?.setInteractionLock("terminal", locked)
         }
         updateStatus()
@@ -487,7 +523,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         selectSession(id: store.sessions[sender.tag].id)
     }
     @objc func renameSelectedTab() {
-        if !settingsSelected, !clipboardSelected, let id = store.selectedID { renameSession(id: id) }
+        if !settingsSelected, !clipboardSelected, !toolsSelected, let id = store.selectedID { renameSession(id: id) }
     }
     private func runAppDialog<T>(_ body: () -> T) -> T {
         overlay?.setInteractionLock("dialog", true)
@@ -542,11 +578,16 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let overlay { overlay.activate(); return }
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
-        if !settingsSelected, !clipboardSelected, let session = store.session {
+        if !settingsSelected, !clipboardSelected, !toolsSelected, let session = store.session {
             session.setPresented(true)
             window?.makeFirstResponder(session.view)
             session.setFocused(true)
         }
+    }
+    @objc func togglePinned() {
+        guard let overlay else { return }
+        overlay.send(.pinChanged(!overlay.state.isPinned))
+        updateStatus()
     }
     @objc func hideTerminal() {
         if let overlay { overlay.hide(); return }
@@ -555,7 +596,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window?.orderOut(nil)
     }
     @objc func closeSession() {
-        if !settingsSelected, !clipboardSelected, let id = store.selectedID { closeTab(id: id) }
+        if !settingsSelected, !clipboardSelected, !toolsSelected, let id = store.selectedID { closeTab(id: id) }
     }
     func closeTab(id: UUID) {
         guard let session = store.sessions.first(where: { $0.id == id }) else { return }
@@ -572,7 +613,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         session.view.removeFromSuperview()
         store.closeAfterConfirmation(id: id)
-        if settingsSelected || clipboardSelected { updateStatus(); return }
+        if settingsSelected || clipboardSelected || toolsSelected { updateStatus(); return }
         if let selected = store.session { attach(selected) }
         else {
             attachedSession = nil
@@ -582,6 +623,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     @objc func showClipboard() {
         guard let clipboard else { return }
+        leaveTools()
         if !clipboardSelected {
             attachedSession?.setFocused(false)
             attachedSession?.setPresented(false)
@@ -631,7 +673,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc func toggleClipboardShelf() {
-        if settingsSelected || clipboardSelected {
+        if settingsSelected || clipboardSelected || toolsSelected {
             shelfEnabled = true
             if let session = store.session { selectSession(id: session.id) }
             else { return }
@@ -662,7 +704,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 shelfCanInsert = canInsert
             }
         }
-        let terminalMode = !settingsSelected && !clipboardSelected
+        let terminalMode = !settingsSelected && !clipboardSelected && !toolsSelected
         workspace.showsShelf = terminalMode && shelfEnabled
         shelfButton?.isEnabled = terminalMode || store.session != nil
         shelfButton?.contentTintColor = terminalMode && shelfEnabled ? .controlAccentColor : .secondaryLabelColor
@@ -672,7 +714,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func insertShelfEntry(_ id: UUID) {
-        guard !settingsSelected, !clipboardSelected,
+        guard !settingsSelected, !clipboardSelected, !toolsSelected,
               let entry = clipboard?.entries.first(where: { $0.id == id }),
               let session = store.session, session.isRunning else { return }
         insertClipboardEntry(entry, into: session.id)
@@ -851,6 +893,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
     @objc func showAccessSettings() {
+        leaveTools()
         if shortcut == nil { shortcut = ShortcutController() }
         guard let shortcut else { return }
         if settingsView == nil {
@@ -897,6 +940,63 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         showTerminal()
     }
+    private func leaveTools() {
+        toolsStore?.setVisible(false)
+        toolsView?.removeFromSuperview()
+        toolsView = nil
+        toolsSelected = false
+    }
+
+    private func prepareTools() {
+        if toolsStore == nil {
+            let preferences = runningQualification
+                ? UserDefaults(suiteName: "dev.personal.Knotch.tools-fixture")! : .standard
+            let tools = ToolsStore(defaults: preferences)
+            tools.context.onDialogChange = { [weak self] presented in
+                self?.overlay?.setInteractionLock("tools-dialog", presented)
+                self?.overlay?.setSystemDialogPresented(presented)
+            }
+            tools.system.onVolumeHUD = { [weak self] volume, muted in
+                guard let self, self.overlay?.state.presentation == .collapsed,
+                      let screen = self.overlay?.panel.screen ?? NSScreen.main else { return }
+                self.volumeHUD.show(volume: volume, muted: muted, screen: screen)
+            }
+            toolsStore = tools
+        }
+    }
+
+    @objc func showTools() {
+        prepareTools()
+        guard let toolsStore else { return }
+        if !toolsSelected {
+            attachedSession?.setFocused(false)
+            attachedSession?.setPresented(false)
+            attachedSession?.view.removeFromSuperview()
+            attachedSession = nil
+            window?.makeFirstResponder(nil)
+            overlay?.setInteractionLock("terminal", false)
+            overlay?.setInteractionLock("settings-recording", false)
+            settingsView?.removeFromSuperview()
+            settingsView = nil
+            settingsSelected = false
+            clipboardView?.removeFromSuperview()
+            clipboardView = nil
+            clipboardSelected = false
+            emptyView?.removeFromSuperview()
+            emptyView = nil
+            toolsSelected = true
+            let view = NSHostingView(rootView: ToolsDashboard(store: toolsStore))
+            view.frame = container.bounds
+            view.autoresizingMask = [.width, .height]
+            container.addSubview(view)
+            toolsView = view
+            updateStatus()
+            overlay?.sessionChanged()
+        }
+        showTerminal()
+        toolsStore.setVisible(true)
+    }
+
     @objc func quitApp() { NSApp.terminate(nil) }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if quitting { return .terminateNow }
@@ -913,6 +1013,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             default: showTerminal(); return .terminateCancel
             }
         }
+        toolsStore?.shutdown()
+        volumeHUD.shutdown()
         store.closeAllAfterConfirmation()
         clipboardImageExport.cleanUp()
         for folder in externalDropFolders { try? FileManager.default.removeItem(at: folder) }
@@ -922,7 +1024,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return .terminateNow
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool { hideTerminal(); return false }
-    func windowDidBecomeKey(_ notification: Notification) { if !settingsSelected && !clipboardSelected { store.session?.setFocused(true) } }
+    func windowDidBecomeKey(_ notification: Notification) { if !settingsSelected && !clipboardSelected && !toolsSelected { store.session?.setFocused(true) } }
     func windowDidResignKey(_ notification: Notification) { store.session?.setFocused(false) }
     func showError(_ error: Error) {
         let alert = NSAlert(error: error)

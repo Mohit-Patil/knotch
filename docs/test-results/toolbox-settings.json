@@ -1,0 +1,110 @@
+{
+  "engine" : "982fe90d941e4b4aab4905ffcbcfdea60bd83343",
+  "results" : [
+    {
+      "detail" : "No-shell presentation uses the same size as Settings and Terminal",
+      "result" : "PASSED",
+      "test" : "Shared empty panel"
+    },
+    {
+      "detail" : "Current display (0.0, 0.0, 1710.0, 1112.0), visible (63.0, 0.0, 1647.0, 1073.0), trigger (743.0, 1072.0, 225.0, 40.0), panel (743.0, 1104.0, 225.0, 8.0); plain-display handle stays in the measured menu-bar band",
+      "result" : "PASSED",
+      "test" : "Display-edge placement"
+    },
+    {
+      "detail" : "The collapsed native trigger is clear, unlabelled, and shadow-free; the expanded panel is ordered out",
+      "result" : "PASSED",
+      "test" : "Idle notch has no painted extension"
+    },
+    {
+      "detail" : "WindowServer resolves a mouse hit in the narrow trigger margin to the actual trigger window",
+      "result" : "PASSED",
+      "test" : "Idle hover margin remains hittable"
+    },
+    {
+      "detail" : "Expanded native panel (495.0, 562.0, 720.0, 550.0) fits current screen placement (63.0, 0.0, 1647.0, 1112.0) at its top edge",
+      "result" : "PASSED",
+      "test" : "Expanded display fit"
+    },
+    {
+      "detail" : "Presenting a native picker lowers the notch panel below modal windows",
+      "result" : "PASSED",
+      "test" : "System dialog layering"
+    },
+    {
+      "detail" : "Closing or cancelling a native picker restores the edge overlay level",
+      "result" : "PASSED",
+      "test" : "System dialog level restored"
+    },
+    {
+      "detail" : "Panel=Optional((1000.0, 600.0)), surface=true, PID=23872->23872; changing panel size must resize the real grid without replacing the shell",
+      "result" : "PASSED",
+      "test" : "Live terminal resize"
+    },
+    {
+      "detail" : "Reset returns to the current display's adaptive terminal dimensions",
+      "result" : "PASSED",
+      "test" : "Reset terminal size"
+    },
+    {
+      "detail" : "In-panel preferences retain the same panel dimensions as Terminal",
+      "result" : "PASSED",
+      "test" : "Shared Settings panel"
+    },
+    {
+      "detail" : "Settings replaced the terminal in the same native panel without creating another window or freeing the shell",
+      "result" : "PASSED",
+      "test" : "Settings tab owns content"
+    },
+    {
+      "detail" : "Returning from Settings presented the same surface, shell PID, and background output",
+      "result" : "PASSED",
+      "test" : "Settings return keeps shell"
+    },
+    {
+      "detail" : "Tools use the same panel, hide the Clipboard shelf, and retain the real terminal surface",
+      "result" : "PASSED",
+      "test" : "Tools share the retained workspace"
+    },
+    {
+      "detail" : "Nineteen distinct utilities supplement Terminal and Clipboard",
+      "result" : "PASSED",
+      "test" : "Tools catalog"
+    },
+    {
+      "detail" : "Opening a local tool never creates or replaces a terminal",
+      "result" : "PASSED",
+      "test" : "Utility navigation preserves shell"
+    },
+    {
+      "detail" : "Nested native tool dialogs retain the overlay lock and lowered level until final dismissal",
+      "result" : "PASSED",
+      "test" : "Tools nested dialog hold"
+    },
+    {
+      "detail" : "Final dismissal restores the window level and releases the interaction lock",
+      "result" : "PASSED",
+      "test" : "Tools dialog release"
+    },
+    {
+      "detail" : "Actual attached NSPanel sheet holds presentation and lowers the workspace",
+      "result" : "PASSED",
+      "test" : "Native sheet stays above tools"
+    },
+    {
+      "detail" : "Dismissal releases the sheet hold and restores the workspace level",
+      "result" : "PASSED",
+      "test" : "Native sheet releases visibility"
+    },
+    {
+      "detail" : "Hiding propagates service visibility and leaves the camera idle without requesting permission",
+      "result" : "PASSED",
+      "test" : "Hidden tools suspend sensitive services"
+    },
+    {
+      "detail" : "Returning from Tools presents the same live Ghostty surface and shell PID",
+      "result" : "PASSED",
+      "test" : "Tools return keeps shell"
+    }
+  ]
+}

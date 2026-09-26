@@ -113,6 +113,8 @@ final class OverlayController: NSObject, NSWindowDelegate {
     private var activationTimer: Timer?
     private var externalDragExitTimer: Timer?
     private var externalDragGeneration: UInt64 = 0
+    private var sheetDepth = 0
+    private var trackedMenus: Set<ObjectIdentifier> = []
     private var activationGeneration: UInt64 = 0
     private var pendingActivation: UInt64?
     private var priorFrontmostPID: pid_t?
@@ -215,6 +217,10 @@ final class OverlayController: NSObject, NSWindowDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(applicationBecameActive),
                                                name: NSApplication.didBecomeActiveNotification,
                                                object: NSApp)
+        NotificationCenter.default.addObserver(self, selector: #selector(menuBeganTracking),
+                                               name: NSMenu.didBeginTrackingNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(menuEndedTracking),
+                                               name: NSMenu.didEndTrackingNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(workspaceResigned),
                                                            name: NSWorkspace.sessionDidResignActiveNotification,
                                                            object: nil)
@@ -269,6 +275,11 @@ final class OverlayController: NSObject, NSWindowDelegate {
     /// mouse exit that may never arrive after a cancelled drag or resize.
     func finishPointerInteraction(_ reason: String) {
         guard state.interactionLocks.contains(reason) else { return }
+        // A late sheet/menu dismissal must not rearm hover after explicit hide.
+        guard state.presentation != .collapsed else {
+            setInteractionLock(reason, false)
+            return
+        }
         let pointer = currentPointerContainment()
         send(.pointerInteractionEnded(inTrigger: pointer.trigger, inPanel: pointer.panel))
         setInteractionLock(reason, false)
@@ -442,6 +453,38 @@ final class OverlayController: NSObject, NSWindowDelegate {
         }
     }
 
+    func windowWillBeginSheet(_ notification: Notification) {
+        guard notification.object as? NSWindow === panel else { return }
+        sheetDepth += 1
+        if sheetDepth == 1 {
+            setInteractionLock("native-sheet", true)
+            setSystemDialogPresented(true)
+        }
+    }
+
+    func windowDidEndSheet(_ notification: Notification) {
+        guard notification.object as? NSWindow === panel, sheetDepth > 0 else { return }
+        sheetDepth -= 1
+        if sheetDepth == 0 {
+            setSystemDialogPresented(false)
+            finishPointerInteraction("native-sheet")
+        }
+    }
+
+    @objc private func menuBeganTracking(_ notification: Notification) {
+        guard state.presentation != .collapsed, NSApp.isActive,
+              let menu = notification.object as? NSMenu else { return }
+        if trackedMenus.insert(ObjectIdentifier(menu)).inserted, trackedMenus.count == 1 {
+            setInteractionLock("native-menu", true)
+        }
+    }
+
+    @objc private func menuEndedTracking(_ notification: Notification) {
+        guard let menu = notification.object as? NSMenu,
+              trackedMenus.remove(ObjectIdentifier(menu)) != nil else { return }
+        if trackedMenus.isEmpty { finishPointerInteraction("native-menu") }
+    }
+
     func windowDidResignKey(_ notification: Notification) {
         guard !isApplyingPresentation else { return }
         presentedSession?.setFocused(false)
@@ -494,7 +537,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
         triggerPanel.contentView = triggerView
         triggerView.setAccessibilityElement(true)
         triggerView.setAccessibilityRole(.button)
-        triggerView.setAccessibilityLabel("Open Knotch terminal")
+        triggerView.setAccessibilityLabel("Open Knotch")
 
         let label = triggerLabel
         label.font = .monospacedSystemFont(ofSize: 12, weight: .semibold)
