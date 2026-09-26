@@ -208,3 +208,11 @@ The final installed executable matches Release by SHA-256 (`7048d391170c43c956cf
 PASS: Model tests, test/Release builds, and [12 native Settings/display checks](idle-notch.json). The idle trigger paints clear on the current notched display, has no label or shadow, and leaves the expanded panel ordered out. WindowServer resolves a mouse hit in its invisible lower margin to the trigger. The fixture waits up to two seconds for asynchronous window registration; an earlier immediate query failed before registration completed. Existing display, modal-level, resize, and same-session checks pass.
 
 PASS (installed UI): Clicking the clear target opens the workspace; Minimise returns to idle. The Release executable was installed, signature-verified, restarted, and hash-matched (`90b51acdaabff38342161748ee961ed2abc3f4658466c6f97234fd62137b1492`). NOT_RUN: physical hover entry/exit, external screenshot drag through the transparent margin, and a live switch to an unnotched display. A native hit query is not a physical hover test, and app-window capture cannot verify the hardware notch outline.
+
+## Full-image shelf cards follow-up — September 26
+
+PASS: Test/Release builds and [45 native Clipboard regression checks](clipboard-image-hover.json). Installed UI inspection confirmed full-image previews using the tile height and removal of the permanent image action row; text-card actions remain visible. The image card's named accessibility Insert action inserted a path into a real Ghostty shell without Return. The disposable shell was then closed without executing it.
+
+INCONCLUSIVE: Automated pointer entry, scrolling, dragging, and keyboard gestures produced no reliable UI response. Hover reveal, overlay button hit testing, and physical drag are not verified by this run. NOT_RUN: keyboard-navigation and VoiceOver qualification. The existing regression fixture covers clipboard/session behavior, not SwiftUI hover appearance.
+
+The installed app was restarted and signature-verified; its executable matches Release SHA-256 `2c0d8b8fbd993126d624be79309708af01a65bdf62d5a5d40b81d5d6fe194089`. The pinned Ghostty engine and qualified toolchain remain unchanged.

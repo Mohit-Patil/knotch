@@ -7,6 +7,7 @@ import SwiftUI
 struct ClipboardDragSource: NSViewRepresentable {
     let entry: ClipboardEntry
     let onDragChange: (Bool) -> Void
+    var onHoverChange: ((Bool) -> Void)? = nil
 
     func makeNSView(context: Context) -> DragView {
         let view = DragView(frame: .zero)
@@ -17,12 +18,28 @@ struct ClipboardDragSource: NSViewRepresentable {
     func updateNSView(_ view: DragView, context: Context) {
         view.entry = entry
         view.onDragChange = onDragChange
+        view.onHoverChange = onHoverChange
     }
 
     @MainActor
     final class DragView: NSView, NSDraggingSource {
         var entry: ClipboardEntry?
         var onDragChange: ((Bool) -> Void)?
+        var onHoverChange: ((Bool) -> Void)?
+        private var hoverTrackingArea: NSTrackingArea?
+
+        override func updateTrackingAreas() {
+            if let hoverTrackingArea { removeTrackingArea(hoverTrackingArea) }
+            super.updateTrackingAreas()
+            let area = NSTrackingArea(rect: .zero,
+                                      options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                      owner: self, userInfo: nil)
+            addTrackingArea(area)
+            hoverTrackingArea = area
+        }
+
+        override func mouseEntered(with event: NSEvent) { onHoverChange?(true) }
+        override func mouseExited(with event: NSEvent) { onHoverChange?(false) }
 
         override func mouseDown(with event: NSEvent) {
             guard let entry else { return }
@@ -49,6 +66,12 @@ struct ClipboardDragSource: NSViewRepresentable {
         func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint,
                              operation: NSDragOperation) {
             onDragChange?(false)
+            if let window {
+                let point = convert(window.convertPoint(fromScreen: screenPoint), from: nil)
+                onHoverChange?(bounds.contains(point))
+            } else {
+                onHoverChange?(false)
+            }
         }
     }
 }

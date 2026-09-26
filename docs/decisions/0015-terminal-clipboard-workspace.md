@@ -11,3 +11,11 @@ Scrollable terminal tabs occupy the leading navigation area. Clipboard and Setti
 Apple's [macOS design guidance](https://developer.apple.com/design/human-interface-guidelines/designing-for-macos/) informed the configurable workspace, and [layout guidance](https://developer.apple.com/design/human-interface-guidelines/layout/) informed yielding secondary content when space is limited. These are design references, not a claim of comprehensive platform or accessibility qualification.
 
 No terminal engine, shell configuration, clipboard retention policy, or agent-launch behavior changed. See the dated workspace follow-up in the acceptance matrix for actual build/test/UI evidence and remaining limitations.
+
+## Full-image shelf cards — September 26
+
+The owner requested complete photo previews with Copy appearing on hover. Image cards now devote 166×102 points to an aspect-fit image within the existing 174×110-point tile, replacing the former 158×62-point preview and permanent action row. Copy and the conditional Insert action fade over the lower-right corner on hover or keyboard focus without changing card geometry. Non-image cards retain their labelled preview and action row. The native drag view stays mounted beneath the controls and reports hover using a bounded AppKit tracking area. Reduce Motion disables the fade.
+
+Image cards expose named Copy/Insert accessibility actions, plus button-style keyboard focus and Space to copy the focused card. The latter follows Apple's [activation focus interaction](https://developer.apple.com/documentation/swiftui/focusinteractions/activate) and does not automatically move keyboard focus into the shelf on launch. The full Clipboard library is unchanged.
+
+Both builds and 45 existing native Clipboard regression checks passed. Installed UI inspection confirmed larger full-image previews, no permanent image action row, and unchanged text cards. The named accessibility Insert action inserted an image path into Ghostty without Return. Automated pointer gestures and keyboard input did not produce reliable results, so hover reveal, button hit testing, keyboard navigation, and physical drag remain unqualified for this change. Those attempts are not evidence of either a working hover interaction or a diagnosed native tracking failure. The disposable shell was closed without executing the inserted path.

@@ -116,6 +116,18 @@ private struct ClipboardShelfCard: View {
     let onInsert: () -> Void
     let onDragChange: (Bool) -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovered = false
+    @State private var isDragging = false
+    @FocusState private var cardFocused: Bool
+    @FocusState private var focusedAction: Action?
+
+    private enum Action: Hashable { case copy, insert }
+
+    private var showsImageActions: Bool {
+        !isDragging && (isHovered || cardFocused || focusedAction != nil)
+    }
+
     // Decode at most once for each card construction, including image cards.
     private let previewImage: NSImage?
 
@@ -131,6 +143,82 @@ private struct ClipboardShelfCard: View {
     }
 
     var body: some View {
+        Group {
+            if let previewImage {
+                imageCard(previewImage)
+            } else {
+                contentCard
+            }
+        }
+        .frame(width: 174, height: 110)
+        .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 9))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9)
+                .strokeBorder(.white.opacity(0.075), lineWidth: 1)
+                .allowsHitTesting(false)
+        }
+    }
+
+    private func imageCard(_ image: NSImage) -> some View {
+        Image(nsImage: image)
+            .resizable()
+            .scaledToFit()
+            .frame(width: 166, height: 102)
+            .background(Color.black.opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
+            .overlay(ClipboardDragSource(entry: entry, onDragChange: { dragging in
+                isDragging = dragging
+                onDragChange(dragging)
+            }, onHoverChange: { isHovered = $0 }))
+            .overlay(alignment: .topTrailing) {
+                if entry.pinned { pinBadge.allowsHitTesting(false) }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                imageActions
+                    .padding(5)
+                    .opacity(showsImageActions ? 1 : 0)
+                    .allowsHitTesting(showsImageActions)
+                    .accessibilityHidden(!showsImageActions)
+            }
+            .padding(4)
+            .contentShape(RoundedRectangle(cornerRadius: 9))
+            .focusable(interactions: .activate)
+            .focused($cardFocused)
+            .focusEffectDisabled()
+            .onKeyPress(.space) {
+                guard cardFocused && focusedAction == nil else { return .ignored }
+                onCopy()
+                return .handled
+            }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: showsImageActions)
+            .help("Drag into the terminal or onto another terminal tab")
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Image: \(accessibleSummary). Drag into terminal.")
+            .accessibilityActions {
+                Button("Copy image to clipboard", action: onCopy)
+                if canInsert {
+                    Button("Insert image into terminal", action: onInsert)
+                }
+            }
+    }
+
+    private var imageActions: some View {
+        HStack(spacing: 4) {
+            actionButton("Copy", symbol: "doc.on.doc", action: onCopy)
+                .focused($focusedAction, equals: .copy)
+                .accessibilityLabel("Copy \(accessibleSummary) to clipboard")
+            if canInsert {
+                actionButton("Insert", symbol: "arrow.up.to.line", action: onInsert)
+                    .focused($focusedAction, equals: .insert)
+                    .accessibilityLabel("Insert \(accessibleSummary) into terminal")
+                    .help("Insert into the selected terminal without pressing Return")
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .padding(3)
+        .background(.black.opacity(0.88), in: RoundedRectangle(cornerRadius: 7))
+    }
+
+    private var contentCard: some View {
         VStack(spacing: 6) {
             preview
                 .frame(width: 158, height: 62)
@@ -152,12 +240,6 @@ private struct ClipboardShelfCard: View {
             .frame(height: 22)
         }
         .padding(8)
-        .frame(width: 174, height: 110)
-        .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 9))
-        .overlay {
-            RoundedRectangle(cornerRadius: 9)
-                .strokeBorder(.white.opacity(0.075), lineWidth: 1)
-        }
     }
 
     @ViewBuilder

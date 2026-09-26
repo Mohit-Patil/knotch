@@ -131,3 +131,11 @@ The owner clarified that the idle app still protruded below the notch. The colla
 Model tests, test/Release builds, and [12 native Settings/display checks](test-results/idle-notch.json) passed. The new checks verify the clear idle appearance and a real WindowServer hit in the lower hover margin. An initial immediate hit query raced window registration; a bounded fixture-only wait fixed that test timing. Installed UI automation opened the clear target and minimised back to idle. Physical hover and external drag delivery through the transparent target remain unqualified.
 
 The app was installed and restarted, then left collapsed with no shell. Signature verification passed and the installed executable matches Release SHA-256 `90b51acdaabff38342161748ee961ed2abc3f4658466c6f97234fd62137b1492`. Ghostty and the qualified toolchain are unchanged.
+
+## Full-image Clipboard shelf previews — September 26
+
+Image cards now use nearly the whole fixed-size tile for an uncropped aspect-fit preview. Copy/Insert appear as an overlay on hover or keyboard focus; text cards retain their existing controls. The native drag source reports hover and stays mounted beneath those controls. Named accessibility actions provide access without hover. See the follow-up in [decision 0015](decisions/0015-terminal-clipboard-workspace.md).
+
+Test/Release builds and [45 native Clipboard regression checks](test-results/clipboard-image-hover.json) passed. The restarted installed app visibly shows the larger full-image previews without a permanent button row. The named accessibility Insert action was exercised against a real shell without Return, then that disposable shell was closed. Automated hover, drag, and keyboard gestures were inconclusive; hover-control hit testing and full keyboard/VoiceOver navigation remain unqualified. No user screenshot data was added to the repository.
+
+The installed app passes signature verification, was restarted into the new build, and matches Release SHA-256 `2c0d8b8fbd993126d624be79309708af01a65bdf62d5a5d40b81d5d6fe194089`. The engine and toolchain are unchanged.
