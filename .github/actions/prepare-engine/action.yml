@@ -1,0 +1,35 @@
+name: Prepare native engine
+description: Verify pinned sources and reuse native outputs when the toolchain and dependencies match.
+runs:
+  using: composite
+  steps:
+    - name: Verify engine source
+      id: source
+      shell: bash
+      run: |
+        scripts/bootstrap-engine.sh --verify
+        fingerprint=$( { xcodebuild -version; xcrun --show-sdk-version; zig version; } | shasum -a 256 | cut -d ' ' -f 1)
+        printf 'toolchain=%s\n' "$fingerprint" >> "$GITHUB_OUTPUT"
+    - name: Restore native engine
+      id: engine
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: |
+          .build/ghostty/macos/GhosttyKit.xcframework
+          .build/ghostty/zig-out/share
+          .build/zig-cache/p
+        key: native-arm64-${{ steps.source.outputs.toolchain }}-v1-${{ hashFiles('ThirdParty/dependency-lock.json', 'scripts/bootstrap-engine.sh', 'scripts/prefetch-dependencies.py') }}
+    - name: Build native engine on cache miss
+      if: steps.engine.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        xcodebuild -downloadComponent MetalToolchain
+        xcrun metal --version
+        scripts/bootstrap-engine.sh --build
+    - name: Verify native outputs
+      shell: bash
+      run: |
+        test -f .build/ghostty/macos/GhosttyKit.xcframework/macos-arm64/libghostty-internal.a
+        test -d .build/ghostty/zig-out/share/ghostty/shell-integration
+        test -f .build/ghostty/zig-out/share/terminfo/78/xterm-ghostty
+        test -d .build/zig-cache/p

@@ -3,6 +3,9 @@ on:
   push:
     branches: [main]
   pull_request:
+concurrency:
+  group: check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -19,5 +22,5 @@ jobs:
           scripts/test-ssh.sh
           scripts/test-clipboard-storage.sh
           python3 -m unittest discover -s Tests -p '*release*.py'
-      - run: scripts/bootstrap-engine.sh --build
+      - uses: ./.github/actions/prepare-engine
       - run: scripts/build.sh

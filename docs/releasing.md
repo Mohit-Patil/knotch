@@ -39,3 +39,5 @@ Before the first public release, validate installation on another Mac. For the s
 Source builds leave the updater disabled. Published builds check automatically but never silently install updates. [Sparkle documentation](https://sparkle-project.org/documentation/).
 
 Signing runs on an ephemeral GitHub-hosted runner. Private files live outside the checkout, are excluded from artifacts, and are removed in an always-run cleanup step. Credential commands suppress output and shell tracing is disabled. GitHub masks configured secrets; maintainers who can change and approve workflows must still be trusted. Never enable secret-bearing diagnostic output.
+
+CI reuses GhosttyKit, its runtime resources, and dependency sources when the pinned inputs and actual Xcode/SDK/Zig versions match. Only a cache miss rebuilds Ghostty or installs Metal tools. App sources always build; superseded checks are canceled automatically. Signing material is never cached.
