@@ -247,6 +247,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Check for Updates…", action: #selector(UpdateController.checkForUpdates(_:)), keyEquivalent: "").target = updates
+        appMenu.addItem(withTitle: "Restart to Update", action: #selector(UpdateController.restartToUpdate(_:)), keyEquivalent: "").target = updates
         appMenu.addItem(withTitle: "Quit Knotch…", action: #selector(quitApp), keyEquivalent: "q").target = self
         appItem.submenu = appMenu
         menu.addItem(appItem)
@@ -966,7 +967,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 setClipboardPersists: { [weak self] enabled in
                     self?.clipboard?.setPersistsHistory(enabled)
                     UserDefaults.standard.set(enabled, forKey: "clipboard.persist.v1")
-                })
+                }, updates: updates)
         }
         guard let settingsView else { return }
         if !settingsSelected {

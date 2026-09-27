@@ -14,6 +14,7 @@ jobs:
     if: github.event_name != 'release' || (!github.event.release.prerelease && !github.event.release.draft)
     runs-on: xcode-27
     timeout-minutes: 90
+    environment: release
     permissions:
       contents: write
     env:
@@ -21,7 +22,6 @@ jobs:
       ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}/.build/zig-cache
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
       NOTARY_PROFILE: knotch-notary
-      SPARKLE_PRIVATE_KEY_FILE: ${{ github.workspace }}/.build/sparkle-private-key
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -45,22 +45,26 @@ jobs:
           APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
+          set +x
           set -euo pipefail
           umask 077
+          export SPARKLE_PRIVATE_KEY_FILE="$RUNNER_TEMP/sparkle-private-key"
+          printf 'SPARKLE_PRIVATE_KEY_FILE=%s\n' "$SPARKLE_PRIVATE_KEY_FILE" >> "$GITHUB_ENV"
           : "${DEVELOPER_ID_P12:?Missing signing certificate}"
           : "${SPARKLE_PRIVATE_KEY:?Missing update signing key}"
           printf '%s' "$DEVELOPER_ID_P12" | base64 --decode > "$RUNNER_TEMP/signing.p12"
           printf '%s' "$APPLE_API_PRIVATE_KEY" > "$RUNNER_TEMP/notary.p8"
           printf '%s' "$SPARKLE_PRIVATE_KEY" > "$SPARKLE_PRIVATE_KEY_FILE"
           KEYCHAIN_PASSWORD=$(openssl rand -hex 32)
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/release.keychain-db"
-          security set-keychain-settings -lut 21600 "$RUNNER_TEMP/release.keychain-db"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/release.keychain-db"
-          security import "$RUNNER_TEMP/signing.p12" -k "$RUNNER_TEMP/release.keychain-db" -P "$DEVELOPER_ID_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
-          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/release.keychain-db"
-          security list-keychains -d user -s "$RUNNER_TEMP/release.keychain-db" login.keychain-db
-          security default-keychain -d user -s "$RUNNER_TEMP/release.keychain-db"
-          xcrun notarytool store-credentials "$NOTARY_PROFILE" --key "$RUNNER_TEMP/notary.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID"
+          printf '::add-mask::%s\n' "$KEYCHAIN_PASSWORD"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/release.keychain-db" > /dev/null 2>&1 || { echo "Signing credential setup failed; details suppressed."; exit 1; }
+          security set-keychain-settings -lut 21600 "$RUNNER_TEMP/release.keychain-db" > /dev/null 2>&1 || { echo "Signing credential setup failed; details suppressed."; exit 1; }
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/release.keychain-db" > /dev/null 2>&1 || { echo "Signing credential setup failed; details suppressed."; exit 1; }
+          security import "$RUNNER_TEMP/signing.p12" -k "$RUNNER_TEMP/release.keychain-db" -P "$DEVELOPER_ID_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security > /dev/null 2>&1 || { echo "Signing credential setup failed; details suppressed."; exit 1; }
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/release.keychain-db" > /dev/null 2>&1 || { echo "Signing credential setup failed; details suppressed."; exit 1; }
+          security list-keychains -d user -s "$RUNNER_TEMP/release.keychain-db" login.keychain-db > /dev/null 2>&1 || { echo "Signing credential setup failed; details suppressed."; exit 1; }
+          security default-keychain -d user -s "$RUNNER_TEMP/release.keychain-db" > /dev/null 2>&1 || { echo "Signing credential setup failed; details suppressed."; exit 1; }
+          xcrun notarytool store-credentials "$NOTARY_PROFILE" --key "$RUNNER_TEMP/notary.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" > /dev/null 2>&1 || { echo "Signing credential setup failed; details suppressed."; exit 1; }
       - name: Build, notarize and sign updates
         run: scripts/release.sh "${RELEASE_TAG#v}"
       - name: Publish downloads and update feed
@@ -72,4 +76,4 @@ jobs:
         run: |
           security default-keychain -d user -s login.keychain-db || true
           security delete-keychain "$RUNNER_TEMP/release.keychain-db" || true
-          rm -f "$RUNNER_TEMP/signing.p12" "$RUNNER_TEMP/notary.p8" "$SPARKLE_PRIVATE_KEY_FILE"
+          rm -f "$RUNNER_TEMP/signing.p12" "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/sparkle-private-key"

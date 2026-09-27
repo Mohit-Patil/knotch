@@ -559,6 +559,8 @@ final class OverlayController: NSObject, NSWindowDelegate {
         panelRoot.wantsLayer = true
         panelRoot.layer?.backgroundColor = NSColor.black.cgColor
         panelRoot.layer?.cornerRadius = 18
+        panelRoot.layer?.borderWidth = 1
+        panelRoot.layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
         panelRoot.layer?.masksToBounds = true
         panelRoot.autoresizingMask = [.width, .height]
         panel.contentView = panelRoot

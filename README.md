@@ -6,7 +6,7 @@ A native terminal at the top of your Mac. Powered by Ghostty, with local tabs, S
 
 ## Install
 
-Download **Knotch.zip** from [Releases](https://github.com/Mohit-Patil/knotch/releases/latest), unzip it, and move Knotch to `/Applications` before opening it. Published builds check for updates automatically; **Knotch → Check for Updates…** checks immediately.
+Download **Knotch.zip** from [Releases](https://github.com/Mohit-Patil/knotch/releases/latest), unzip it, and move Knotch to `/Applications` before opening it. Published builds check for updates automatically; **Settings → Check for updates** checks immediately. When an update is ready, choose **Restart to update**.
 
 ## Use
 

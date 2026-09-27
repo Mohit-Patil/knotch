@@ -68,7 +68,8 @@ final class ShortcutController: NSObject {
                           setPanelSize: @escaping (CGSize?) -> Void,
                           notifications: AgentNotificationController,
                           clipboardPersists: Bool,
-                          setClipboardPersists: @escaping (Bool) -> Void) -> NSView {
+                          setClipboardPersists: @escaping (Bool) -> Void,
+                          updates: UpdateController) -> NSView {
         NSHostingView(rootView: AccessSettings(controller: self, initialHover: hoverEnabled,
                                                setHover: setHover, onRecordingChange: onRecordingChange,
                                                panelSize: panelSize, defaultPanelSize: defaultPanelSize,
@@ -77,7 +78,7 @@ final class ShortcutController: NSObject {
                                                setPanelSize: setPanelSize,
                                                notifications: notifications,
                                                clipboardPersists: clipboardPersists,
-                                               setClipboardPersists: setClipboardPersists))
+                                               setClipboardPersists: setClipboardPersists, updates: updates))
     }
 
     func shutdown() {
@@ -89,6 +90,7 @@ final class ShortcutController: NSObject {
 }
 
 private struct AccessSettings: View {
+    @ObservedObject var updates: UpdateController
     let notifications: AgentNotificationController
     let controller: ShortcutController
     let setHover: (Bool) -> Void
@@ -110,7 +112,9 @@ private struct AccessSettings: View {
          panelSize: CGSize, defaultPanelSize: CGSize, maximumPanelSize: CGSize,
          panelSizeIsCustom: Bool, setPanelSize: @escaping (CGSize?) -> Void,
          notifications: AgentNotificationController,
-         clipboardPersists: Bool, setClipboardPersists: @escaping (Bool) -> Void) {
+         clipboardPersists: Bool, setClipboardPersists: @escaping (Bool) -> Void,
+         updates: UpdateController) {
+        self.updates = updates
         self.notifications = notifications
         self.controller = controller
         self.setHover = setHover
@@ -201,6 +205,18 @@ private struct AccessSettings: View {
                     .onChange(of: clipboardPersists) { _, value in setClipboardPersists(value) }
                 Text("Saved only on this Mac. Pause capture or clear items in the Clipboard tab.")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Updates").font(.headline)
+                HStack {
+                    Button("Check for updates") { updates.checkForUpdates(nil) }
+                        .disabled(!updates.canCheck || updates.canRestart)
+                    Button("Restart to update") { updates.restartToUpdate(nil) }
+                        .disabled(!updates.canRestart)
+                }
+                Text(updates.status).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Divider()
             AgentNotificationSettings(controller: notifications)
