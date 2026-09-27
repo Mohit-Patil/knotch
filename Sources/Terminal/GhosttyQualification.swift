@@ -456,6 +456,9 @@ enum HarnessQualification {
             _ = NSApp.sendAction(copyLink.action!, to: copyLink.target, from: copyLink)
             try check("Native Copy Link", NSPasteboard.general.string(forType: .string) == "https://example.com/knotch-test",
                       "The menu's real target/action writes the hyperlink destination to the system pasteboard")
+            NSApp.activate(ignoringOtherApps: true)
+            overlay.panel.makeKeyAndOrderFront(nil)
+            try await waitFor({ overlay.panel.isKeyWindow }, description: "context action keyboard focus")
             var openedURL: URL?
             session.nativeView.browserOpenerForFixture = { openedURL = $0; return true }
             _ = NSApp.sendAction(openLink.action!, to: openLink.target, from: openLink)
@@ -478,6 +481,17 @@ enum HarnessQualification {
                       && GhosttyNativeView.browserURL("https://") == nil
                       && GhosttyNativeView.browserURL("http://localhost:3000") != nil,
                       "HTTP(S) links including localhost are supported; script, file and incomplete URLs are rejected")
+            for captured in [false, true] {
+                let mode = captured ? "\\033[?1000h\\033[?1006h" : "\\033[?1000l\\033[?1006l"
+                send("printf '\\033[2J\\033[H\(mode)https://example.com/plain-link\\n'\r", to: session)
+                try await waitFor({ screen(session).contains("https://example.com/plain-link")
+                    && ghostty_surface_mouse_captured(session.nativeView.surface!) == captured }, description: "plain URL mouse mode")
+                let menu = session.nativeView.menu(for: contextEvent)
+                try check(captured ? "Mouse-captured TUI context link" : "Plain URL context link",
+                          menu?.items.first(where: { $0.title == "Open in Browser" })?.representedObject as? String == "https://example.com/plain-link",
+                          "Native menu resolves an ordinary printed URL with mouse reporting \(captured ? "enabled" : "disabled")")
+            }
+            send("printf '\\033[?1000l\\033[?1006l'\r", to: session)
             coordinator.overlay?.hide(restoreFocus: false)
             session.view.removeFromSuperview()
             coordinator.store.closeAfterConfirmation(id: session.id)

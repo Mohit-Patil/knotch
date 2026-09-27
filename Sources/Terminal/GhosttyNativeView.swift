@@ -202,8 +202,7 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient, NSMenu
         return surface != nil
     }
     override func menu(for event: NSEvent) -> NSMenu? {
-        guard let surface, event.type == .rightMouseDown || (event.type == .leftMouseDown && event.modifierFlags.contains(.control)),
-              !ghostty_surface_mouse_captured(surface) else { return nil }
+        guard let surface, event.type == .rightMouseDown || (event.type == .leftMouseDown && event.modifierFlags.contains(.control)) else { return nil }
         onActivate?()
         window?.makeFirstResponder(self)
         syncFocus()
@@ -213,7 +212,7 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient, NSMenu
         let local = convert(event.locationInWindow, from: nil)
         hoveredLink = nil
         ghostty_surface_mouse_pos(surface, -1, -1, Self.mods(event.modifierFlags))
-        ghostty_surface_mouse_pos(surface, local.x, bounds.height - local.y, Self.mods(event.modifierFlags.union(.command)))
+        ghostty_surface_mouse_pos(surface, local.x, bounds.height - local.y, Self.mods(event.modifierFlags.union(ghostty_surface_mouse_captured(surface) ? [.command, .shift] : [.command])))
         let link = hoveredLink.flatMap(Self.browserURL) ?? selectedText.flatMap(Self.browserURL)
         ghostty_surface_mouse_pos(surface, local.x, bounds.height - local.y, Self.mods(event.modifierFlags))
         let menu = NSMenu()
@@ -606,18 +605,14 @@ final class GhosttyNativeView: NSView, @preconcurrency NSTextInputClient, NSMenu
         selecting = false
         onInteractionLock?(hasMarkedText())
     }
+    // Reserve secondary click for native actions, including inside mouse-reporting TUIs.
+    // Do not send a press or release to the PTY for a gesture owned by this menu.
     override func rightMouseDown(with event: NSEvent) {
-        guard let surface else { return }
-        onActivate?()
-        window?.makeFirstResponder(self)
-        syncFocus()
-        mousePosition(event)
-        if ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT, Self.mods(event.modifierFlags)) { return }
-        super.rightMouseDown(with: event)
+        guard let menu = menu(for: event) else { return }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
-    override func rightMouseUp(with event: NSEvent) {
-        mouseButton(event, state: GHOSTTY_MOUSE_RELEASE, button: GHOSTTY_MOUSE_RIGHT)
-    }
+    override func rightMouseUp(with event: NSEvent) {}
+
     override func otherMouseDown(with event: NSEvent) {
         mousePosition(event)
         mouseButton(event, state: GHOSTTY_MOUSE_PRESS, button: Self.button(event.buttonNumber))

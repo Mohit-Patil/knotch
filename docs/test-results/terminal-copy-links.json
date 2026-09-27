@@ -37,7 +37,7 @@
       "test" : "System dialog level restored"
     },
     {
-      "detail" : "Panel=Optional((1000.0, 600.0)), surface=true, PID=4721->4721; changing panel size must resize the real grid without replacing the shell",
+      "detail" : "Panel=Optional((1000.0, 600.0)), surface=true, PID=60425->60425; changing panel size must resize the real grid without replacing the shell",
       "result" : "PASSED",
       "test" : "Live terminal resize"
     },
@@ -195,6 +195,16 @@
       "detail" : "HTTP(S) links including localhost are supported; script, file and incomplete URLs are rejected",
       "result" : "PASSED",
       "test" : "Browser URL bounds"
+    },
+    {
+      "detail" : "Native menu resolves an ordinary printed URL with mouse reporting disabled",
+      "result" : "PASSED",
+      "test" : "Plain URL context link"
+    },
+    {
+      "detail" : "Native menu resolves an ordinary printed URL with mouse reporting enabled",
+      "result" : "PASSED",
+      "test" : "Mouse-captured TUI context link"
     }
   ]
 }

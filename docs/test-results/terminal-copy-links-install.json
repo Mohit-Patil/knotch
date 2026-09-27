@@ -1,20 +1,7 @@
 {
-  "date": "2026-09-26",
-  "release_build": "PASSED",
-  "test_build": "PASSED",
-  "native_checks": 39,
-  "installed_path": "/Applications/Knotch.app",
-  "sha256": "af807440ef9b958ece205fd132b2dad88dd20783cf72a9c7af23b211ec6d04c9",
-  "signature": "ad-hoc codesign --verify --strict passed",
-  "manual_ui": [
-    "Native right-click menu displayed Copy, Paste, Copy Link and Open in Browser over a real OSC 8 terminal link",
-    "Open in Browser launched Chrome at https://example.com/; Example Domain page verified",
-    "Test browser tab closed and disposable shell exited and removed",
-    "Pin disabled and app left collapsed with no test session"
-  ],
-  "automation_note": "CUA paste reported a clipboard-read timeout although the command was visibly inserted; inspected state before sending Return, without duplicating the command",
-  "limits": [
-    "No authenticated coding-agent copy or login flow executed",
-    "No full mouse-capturing TUI matrix or VoiceOver qualification"
-  ]
+  "date": "2026-09-27",
+  "sha256": "e8a29313816f75d42b05db68a825e0dbc7113def2c6c714de6272b26e0a6ce9d",
+  "native_checks": 41,
+  "manual": "Installed Release: plain https://example.com/ with DEC 1000 and SGR 1006 mouse reporting enabled; native right-click menu visible; Open in Browser opened Chrome Example Domain. Test browser tab and shell closed.",
+  "limitations": "No authenticated coding-agent workflow tested."
 }
