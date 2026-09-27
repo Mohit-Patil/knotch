@@ -1,6 +1,6 @@
 # Releases
 
-Stable `vX.Y.Z` tags (or publishing a stable GitHub Release) run the release workflow. It builds an Apple Silicon app, signs with Developer ID, notarizes and staples it, uploads the ZIP and rebuildable dependency sources, then advances the signed Sparkle feed on the `updates` branch. Ordinary source pushes and GitHub Packages do not ship app updates.
+Stable `vX.Y.Z` tags (or publishing a stable GitHub Release) run the release workflow. It builds an Apple Silicon app, signs with Developer ID, notarizes and staples it, uploads the signed DMG, update ZIP, and rebuildable dependency sources, then advances the signed Sparkle feed on the `updates` branch. Ordinary source pushes and GitHub Packages do not ship app updates.
 
 ## One-time setup
 
@@ -41,3 +41,5 @@ Source builds leave the updater disabled. Published builds check automatically b
 Signing runs on an ephemeral GitHub-hosted runner. Private files live outside the checkout, are excluded from artifacts, and are removed in an always-run cleanup step. Credential commands suppress output and shell tracing is disabled. GitHub masks configured secrets; maintainers who can change and approve workflows must still be trusted. Never enable secret-bearing diagnostic output.
 
 CI reuses GhosttyKit, its runtime resources, and dependency sources when the pinned inputs and actual Xcode/SDK/Zig versions match. Only a cache miss rebuilds Ghostty or installs Metal tools. App sources always build; superseded checks are canceled automatically. Signing material is never cached.
+
+The DMG contains Knotch and an Applications shortcut for manual installation. Sparkle uses the ZIP. `scripts/package-dmg.sh` can package an existing notarized release app without rebuilding it; the disk image is signed and notarized separately.

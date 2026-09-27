@@ -25,7 +25,7 @@ class ReleaseTests(unittest.TestCase):
     def test_mismatched_tag_never_calls_github(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
-            for name in ('Knotch.zip', 'Knotch-sources.tar.gz', 'SHA256SUMS'):
+            for name in ('Knotch.dmg', 'Knotch.zip', 'Knotch-sources.tar.gz', 'SHA256SUMS'):
                 (directory / name).touch()
             (directory / 'appcast.xml').write_bytes(feed('1.0.1'))
             with patch.dict('os.environ', {'GITHUB_REPOSITORY': 'owner/repo'}), patch.object(publisher, 'gh') as gh:
@@ -47,7 +47,7 @@ class ReleaseTests(unittest.TestCase):
             return ''
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
-            for name in ('Knotch.zip', 'Knotch-sources.tar.gz', 'SHA256SUMS'):
+            for name in ('Knotch.dmg', 'Knotch.zip', 'Knotch-sources.tar.gz', 'SHA256SUMS'):
                 (directory / name).touch()
             (directory / 'appcast.xml').write_bytes(feed('1.0.0'))
             with patch.dict('os.environ', {'GITHUB_REPOSITORY': 'owner/repo'}), patch.object(publisher, 'gh', side_effect=github):
@@ -60,7 +60,7 @@ class ReleaseTests(unittest.TestCase):
         import base64
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
-            for name in ('Knotch.zip', 'Knotch-sources.tar.gz', 'SHA256SUMS'):
+            for name in ('Knotch.dmg', 'Knotch.zip', 'Knotch-sources.tar.gz', 'SHA256SUMS'):
                 (directory / name).touch()
             (directory / 'appcast.xml').write_bytes(feed('1.0.0'))
             responses = [[{'ref': 'refs/heads/updates', 'object': {'sha': 'parent'}}],

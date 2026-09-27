@@ -64,6 +64,7 @@ if [[ -n "${SPARKLE_PRIVATE_KEY_FILE:-}" ]]; then KEY_ARGS=(--ed-key-file "$SPAR
   --download-url-prefix "https://github.com/$REPOSITORY/releases/download/v$VERSION/" \
   --link "https://github.com/$REPOSITORY" "$OUT"
 "$ROOT/.build/sparkle/bin/sign_update" "${KEY_ARGS[@]}" --verify "$OUT/appcast.xml"
+"$ROOT/scripts/package-dmg.sh" "$APP" "$OUT/Knotch.dmg"
 "$ROOT/scripts/package-sources.sh" "$OUT/Knotch-sources.tar.gz"
-(cd "$OUT" && shasum -a 256 Knotch.zip Knotch-sources.tar.gz appcast.xml > SHA256SUMS)
+(cd "$OUT" && shasum -a 256 Knotch.dmg Knotch.zip Knotch-sources.tar.gz appcast.xml > SHA256SUMS)
 printf 'Verified release artifacts: %s\n' "$OUT"

@@ -36,7 +36,7 @@ def publish(tag, directory):
         raise ValueError('expected stable vX.Y.Z tag')
     repo = os.environ['GITHUB_REPOSITORY']
     prefix = f'repos/{repo}'
-    files = [directory / name for name in ('Knotch.zip', 'Knotch-sources.tar.gz', 'appcast.xml', 'SHA256SUMS')]
+    files = [directory / name for name in ('Knotch.dmg', 'Knotch.zip', 'Knotch-sources.tar.gz', 'appcast.xml', 'SHA256SUMS')]
     for file in files:
         if not file.is_file():
             raise ValueError(f'missing artifact: {file}')
