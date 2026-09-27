@@ -314,6 +314,32 @@ enum HarnessQualification {
             try check("Reset terminal size",
                       overlay.layout?.panelFrame.size != CGSize(width: 1000, height: 600),
                       "Reset returns to the current display's adaptive terminal dimensions")
+            let configDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: configDirectory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: configDirectory) }
+            let configFile = configDirectory.appendingPathComponent("config")
+            let includeFile = configDirectory.appendingPathComponent("appearance")
+            try "font-size = 22\nfont-family = Menlo\n".write(to: includeFile, atomically: true, encoding: .utf8)
+            try "theme = Catppuccin Mocha\nconfig-file = appearance\n".write(to: configFile, atomically: true, encoding: .utf8)
+            let previousCell = ghostty_surface_size(surface).cell_height_px
+            try runtime.reloadConfigurationForFixture(file: configFile)
+            try await waitFor({ ghostty_surface_size(surface).cell_height_px != previousCell }, description: "live config font resize")
+            let configuredCell = ghostty_surface_size(surface).cell_height_px
+            try check("Live global configuration", session.surface == surface && ghostty_surface_foreground_pid(surface) == pid,
+                      "Theme, font and relative include loaded without replacing the shell")
+            let fresh = try GhosttySession(runtime: runtime, directory: configDirectory, testCommand: "/bin/zsh -f")
+            defer { fresh.closeAfterConfirmation() }
+            try await waitFor({ fresh.surface.map { ghostty_surface_size($0).cell_height_px == configuredCell } ?? false }, description: "new tab configuration")
+            try check("New tab inherits configuration", true, "New surface uses the reloaded font metrics")
+            try "not-a-real-ghostty-option = true\n".write(to: configFile, atomically: true, encoding: .utf8)
+            var rejected = false
+            do { try runtime.reloadConfigurationForFixture(file: configFile) } catch { rejected = true }
+            try check("Invalid configuration preserves tabs", rejected && ghostty_surface_size(surface).cell_height_px == configuredCell && session.surface == surface,
+                      "Invalid input is rejected before updating the runtime")
+            try "font-size = 15\n".write(to: configFile, atomically: true, encoding: .utf8)
+            try runtime.reloadConfigurationForFixture(file: configFile)
+            try await waitFor({ ghostty_surface_size(surface).cell_height_px != configuredCell && fresh.surface.map { ghostty_surface_size($0).cell_height_px != configuredCell } ?? false }, description: "all tabs reload")
+            try check("Hidden tab reload", true, "Both existing surfaces receive the next configuration")
             let beforeWindows = Set(NSApp.windows.map(\.windowNumber))
             send("sleep 1; printf 'SETTINGS_BACKGROUND_DONE\\n'\r", to: session)
             coordinator.showAccessSettings()
