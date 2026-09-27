@@ -230,25 +230,30 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         appMenu.addItem(withTitle: "Show Knotch", action: #selector(showTerminal), keyEquivalent: "0").target = self
         appMenu.addItem(withTitle: "New Tab", action: #selector(newTab), keyEquivalent: "t").target = self
         appMenu.addItem(withTitle: "Connect to Server…", action: #selector(connectServer), keyEquivalent: "").target = self
-        appMenu.addItem(withTitle: "Reconnect SSH in New Tab", action: #selector(reconnectSSH), keyEquivalent: "").target = self
-        appMenu.addItem(withTitle: "Rename Tab…", action: #selector(renameSelectedTab), keyEquivalent: "").target = self
-        appMenu.addItem(withTitle: "Open Project…", action: #selector(chooseProject), keyEquivalent: "o").target = self
-        appMenu.addItem(withTitle: "Open Home Shell", action: #selector(openHome), keyEquivalent: "").target = self
         appMenu.addItem(withTitle: "Clipboard", action: #selector(showClipboard), keyEquivalent: "").target = self
-        appMenu.addItem(withTitle: "Toggle Clipboard Shelf", action: #selector(toggleClipboardShelf), keyEquivalent: "").target = self
         appMenu.addItem(withTitle: "Minimise Knotch", action: #selector(hideTerminal), keyEquivalent: "h").target = self
-        appMenu.addItem(withTitle: "Close Session…", action: #selector(closeSession), keyEquivalent: "w").target = self
         appMenu.addItem(withTitle: "Settings", action: #selector(showAccessSettings), keyEquivalent: ",").target = self
-        appMenu.addItem(.separator())
-        for number in 1...9 {
-            let item = appMenu.addItem(withTitle: "Select Tab \(number)", action: #selector(selectNumberedTab(_:)), keyEquivalent: String(number))
-            item.tag = number - 1
-            item.target = self
-        }
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Check for Updates…", action: #selector(UpdateController.checkForUpdates(_:)), keyEquivalent: "").target = updates
         appMenu.addItem(withTitle: "Restart to Update", action: #selector(UpdateController.restartToUpdate(_:)), keyEquivalent: "").target = updates
         appMenu.addItem(withTitle: "Quit Knotch…", action: #selector(quitApp), keyEquivalent: "q").target = self
+        // Keep keyboard commands without filling the status menu with tab actions.
+        for (title, action, key) in [
+            ("Open Project…", #selector(chooseProject), "o"),
+            ("Close Session…", #selector(closeSession), "w")
+        ] {
+            let item = appMenu.addItem(withTitle: title, action: action, keyEquivalent: key)
+            item.target = self
+            item.isHidden = true
+            item.allowsKeyEquivalentWhenHidden = true
+        }
+        for number in 1...9 {
+            let item = appMenu.addItem(withTitle: "Select Tab \(number)", action: #selector(selectNumberedTab(_:)), keyEquivalent: String(number))
+            item.tag = number - 1
+            item.target = self
+            item.isHidden = true
+            item.allowsKeyEquivalentWhenHidden = true
+        }
         appItem.submenu = appMenu
         menu.addItem(appItem)
         let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
@@ -261,7 +266,11 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem?.button?.title = ">_"
         statusItem?.button?.setAccessibilityLabel("Knotch")
-        statusItem?.menu = appMenu.copy() as? NSMenu
+        let statusMenu = NSMenu()
+        for item in appMenu.items where !item.isHidden {
+            if let copy = item.copy() as? NSMenuItem { statusMenu.addItem(copy) }
+        }
+        statusItem?.menu = statusMenu
     }
 
     func makeHarnessWindow() {

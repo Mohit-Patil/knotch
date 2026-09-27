@@ -25,6 +25,8 @@ targets:
       - path: Sources
         includes:
           - '**/*.swift'
+      - path: Resources/AppIcon.icns
+        buildPhase: resources
       - path: Resources/terminal.conf
         buildPhase: resources
     postBuildScripts:
