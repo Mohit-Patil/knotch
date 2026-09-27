@@ -1,9 +1,0 @@
-# Transparent idle notch
-
-On September 26 the owner clarified that the unwanted extension below the notch occurs while the app is idle. The collapsed trigger previously painted black across the camera exclusion band and its small interaction margins. That produced a visible lip even with the expanded panel ordered out. This supersedes the painted idle cap described in decisions 0002 and 0005.
-
-On notched displays the trigger now paints clear, hides its label, and has no shadow. The 2-point lower margin and 8-point side margins remain invisible so the pointer and dragged items can reach the target from visible screen pixels. The window stays nonopaque, at full window alpha, with mouse events explicitly enabled. Displays without a camera retain their labelled black handle. Expanded geometry, motion, session ownership, and the pinned Ghostty engine are unchanged.
-
-Model tests and both test/Release builds passed. The [12-check native fixture](../test-results/idle-notch.json) verifies the idle appearance, hidden expanded window, and an actual WindowServer mouse hit in the reachable lower margin, alongside display fit, dialog levels, and retained Ghostty session checks. WindowServer registration is asynchronous; an initial immediate hit query failed, then a bounded fixture-only wait resolved the timing race. No shipping delay was added.
-
-The signed Release was installed and restarted. Native UI automation clicked the idle target, observed the shared workspace, and minimised back to the idle target. The installed executable matches Release SHA-256 `90b51acdaabff38342161748ee961ed2abc3f4658466c6f97234fd62137b1492`. An app-window screenshot cannot establish the hardware cutout's exact physical outline. Physical hover entry and external drag delivery through the transparent margin, plus a live no-notch display transition, remain unqualified.

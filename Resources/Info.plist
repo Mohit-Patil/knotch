@@ -9,15 +9,20 @@
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleName</key><string>Knotch</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.1.0</string>
-    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
+    <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
     <key>LSMinimumSystemVersion</key><string>26.0</string>
-    <key>NSCameraUsageDescription</key><string>Knotch uses your camera only when you start Mirror. Nothing is recorded or uploaded.</string>
-    <key>NSCalendarsFullAccessUsageDescription</key><string>Knotch shows your schedule in the Calendar tool when you choose to connect it.</string>
-    <key>NSRemindersFullAccessUsageDescription</key><string>Knotch shows and updates reminders when you choose to connect the Reminders tool.</string>
-    <key>NSAppleEventsUsageDescription</key><string>Knotch controls Music or Spotify only when you connect Now Playing.</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSQuitAlwaysKeepsWindows</key><false/>
+    <key>KnotchUpdatesEnabled</key><string>$(KNOTCH_UPDATES_ENABLED)</string>
+    <key>SUFeedURL</key><string>$(SPARKLE_FEED_URL)</string>
+    <key>SUPublicEDKey</key><string>$(SPARKLE_PUBLIC_KEY)</string>
+    <key>SUEnableAutomaticChecks</key><true/>
+    <key>SUAutomaticallyUpdate</key><false/>
+    <key>SUAllowsAutomaticUpdates</key><false/>
+    <key>SUEnableSystemProfiling</key><false/>
+    <key>SURequireSignedFeed</key><true/>
+    <key>SUVerifyUpdateBeforeExtraction</key><true/>
 </dict>
 </plist>

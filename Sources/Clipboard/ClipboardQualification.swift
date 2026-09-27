@@ -39,6 +39,7 @@ enum ClipboardQualification {
             exit(records.contains { $0["result"] == "FAILED" } ? 1 : 0)
         }
         let history = ClipboardHistory(pasteboard: board, storageURL: file)
+        await history.waitUntilSettled()
         board.clearContents()
         board.setString("KNOTCH_CLIPBOARD_TEXT", forType: .string)
         history.captureChange()
@@ -121,26 +122,28 @@ enum ClipboardQualification {
               "Content copied while paused is not backfilled")
 
         if let text = history.entries.first(where: { $0.id == textID }) {
-            history.copy(text)
+            await history.copy(text)
         }
         check("Copy earlier item", board.string(forType: .string) == "KNOTCH_CLIPBOARD_TEXT"
               && history.entries.count == count,
               "Selecting an older item restores it without adding a duplicate")
 
-        if let image = history.entries.first(where: { $0.kind == .image }) { history.copy(image) }
+        if let image = history.entries.first(where: { $0.kind == .image }) { await history.copy(image) }
         check("Restore image", board.data(forType: .png) == png,
               "Selecting an image restores its PNG representation")
-        if let rich = history.entries.first(where: { $0.kind == .richText }) { history.copy(rich) }
+        if let rich = history.entries.first(where: { $0.kind == .richText }) { await history.copy(rich) }
         check("Restore rich text", board.string(forType: .string) == "Formatted fixture"
               && board.data(forType: .rtf) != nil,
               "Selecting formatted text restores both plain and RTF representations")
-        if let files = history.entries.first(where: { $0.kind == .files }) { history.copy(files) }
+        if let files = history.entries.first(where: { $0.kind == .files }) { await history.copy(files) }
         let restoredFiles = board.readObjects(forClasses: [NSURL.self],
                                               options: [.urlReadingFileURLsOnly: true]) as? [URL]
         check("Restore files", restoredFiles?.first?.lastPathComponent == "fixture.txt",
               "Selecting a file item restores a file URL without reading its contents")
 
+        await history.waitUntilSettled()
         let restored = ClipboardHistory(pasteboard: board, storageURL: file)
+        await restored.waitUntilSettled()
         check("Local history reload", restored.entries.count == count && restored.entries.first?.kind == .files,
               "History reloads from the user-private local file")
         let fileMode = (try? FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber)?.intValue
@@ -152,6 +155,7 @@ enum ClipboardQualification {
         check("Pin and clear", restored.entries.count == 1 && restored.entries[0].id == textID,
               "Clear unpinned retains the pinned item")
         restored.setPersistsHistory(false)
+        await restored.waitUntilSettled()
         check("Disable persistence", !FileManager.default.fileExists(atPath: file.path),
               "Turning persistence off removes the local history file")
 

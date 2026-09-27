@@ -1,9 +1,10 @@
 import AppKit
 import Combine
+import CryptoKit
 
 /// A local snapshot of common pasteboard representations. Terminal OSC clipboard
 /// callbacks remain governed by GhosttySession's separate consent path.
-struct ClipboardEntry: Codable, Identifiable, Equatable {
+struct ClipboardEntry: Codable, Identifiable, Equatable, Sendable {
     enum Kind: String, Codable { case text, link, richText, image, files }
 
     var id = UUID()
@@ -14,10 +15,45 @@ struct ClipboardEntry: Codable, Identifiable, Equatable {
     var fileURLs: [URL]?
     var createdAt = Date()
     var pinned = false
+    var dataFile: String?
+    var textFile: String?
+    var textPreview: String?
+    var contentDigest: String?
+    var payloadBytes: Int?
+    // Runtime-only location: persisted filenames must match the entry UUID.
+    var payloadDirectory: URL?
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, text, data, imageType, fileURLs, createdAt, pinned
+        case dataFile, textFile, textPreview, contentDigest, payloadBytes
+    }
+
+    var validPayloadNames: Bool {
+        (dataFile == nil || dataFile == id.uuidString + ".data")
+            && (textFile == nil || textFile == id.uuidString + ".text")
+    }
+
+    func prepared() -> ClipboardEntry {
+        var entry = self
+        entry.textPreview = text.map { String($0.prefix(640)) }
+        entry.payloadBytes = (data?.count ?? 0) + (text?.utf8.count ?? 0)
+        let dataHash = SHA256.hash(data: data ?? Data()).map { String(format: "%02x", $0) }.joined()
+        let textHash = SHA256.hash(data: Data((text ?? "").utf8)).map { String(format: "%02x", $0) }.joined()
+        entry.contentDigest = dataHash + textHash
+        return entry
+    }
+
+    mutating func adoptPayload(from stored: ClipboardEntry) {
+        data = stored.data
+        text = stored.text
+        dataFile = stored.dataFile
+        textFile = stored.textFile
+        payloadDirectory = stored.payloadDirectory
+    }
 
     var label: String {
         switch kind {
-        case .text, .link, .richText: return String(text?.prefix(160) ?? "")
+        case .text, .link, .richText: return String((text ?? textPreview ?? "").prefix(160))
         case .image: return "Image"
         case .files:
             let names = fileURLs?.map(\.lastPathComponent) ?? []
@@ -26,8 +62,10 @@ struct ClipboardEntry: Codable, Identifiable, Equatable {
     }
 
     func hasSameContent(as other: ClipboardEntry) -> Bool {
-        kind == other.kind && text == other.text && data == other.data
-            && imageType == other.imageType && fileURLs == other.fileURLs
+        kind == other.kind && imageType == other.imageType && fileURLs == other.fileURLs
+            && (contentDigest != nil && other.contentDigest != nil
+                ? contentDigest == other.contentDigest
+                : text == other.text && data == other.data)
     }
 }
 
@@ -38,7 +76,16 @@ final class ClipboardHistory: ObservableObject {
     @Published private(set) var persistsHistory: Bool
 
     private let pasteboard: NSPasteboard
-    private let storageURL: URL?
+    private let storage: ClipboardStorage?
+    @Published private(set) var isLoading = false
+    @Published private(set) var storageFailed = false
+    private var loadTask: Task<Void, Never>?
+    private var saveTask: Task<Void, Never>?
+    private var pendingActions: [() -> Void] = []
+    private var needsSave = false
+    private var observing = false
+    private var copyRevision = 0
+    private let maximumPayloadBytes = 128 * 1024 * 1024
     private var lastChangeCount: Int
     private var timer: Timer?
     private let maximumEntries = 50
@@ -47,52 +94,103 @@ final class ClipboardHistory: ObservableObject {
 
     init(pasteboard: NSPasteboard = .general, storageURL: URL? = nil, persistsHistory: Bool = true) {
         self.pasteboard = pasteboard
-        self.storageURL = storageURL
+        self.storage = storageURL.map(ClipboardStorage.init(indexURL:))
         self.persistsHistory = persistsHistory
         lastChangeCount = pasteboard.changeCount
-        if persistsHistory { load() }
-    }
-
-    func start() {
-        guard timer == nil else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.captureChange() }
+        if let storage {
+            isLoading = true
+            loadTask = Task { [weak self] in
+                do {
+                    if persistsHistory {
+                        let loaded = try await storage.load()
+                        guard let self else { return }
+                        self.entries = loaded.entries
+                        self.storageFailed = loaded.migrationFailed
+                    } else {
+                        _ = try await storage.save([], persistent: false)
+                    }
+                } catch { self?.storageFailed = true }
+                guard let self else { return }
+                self.isLoading = false
+                let actions = self.pendingActions
+                self.pendingActions.removeAll()
+                for action in actions { action() }
+            }
         }
     }
 
-    func stop() { timer?.invalidate(); timer = nil }
+    func start() {
+        observing = true
+        startTimer()
+    }
+
+    private func startTimer() {
+        guard observing, !isPaused, timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.captureChange() }
+        }
+        timer?.tolerance = 0.1
+    }
+
+    func stop() { observing = false; timer?.invalidate(); timer = nil }
 
     func setPaused(_ paused: Bool) {
         isPaused = paused
-        // Never backfill content copied while capture was paused.
-        if !paused { lastChangeCount = pasteboard.changeCount }
+        if paused { timer?.invalidate(); timer = nil }
+        else {
+            // Never backfill content copied while capture was paused.
+            lastChangeCount = pasteboard.changeCount
+            startTimer()
+        }
     }
 
     func setPersistsHistory(_ enabled: Bool) {
-        guard persistsHistory != enabled else { return }
-        persistsHistory = enabled
-        if enabled { save() }
-        else if let storageURL { try? FileManager.default.removeItem(at: storageURL) }
+        whenLoaded { [self] in
+            guard persistsHistory != enabled else { return }
+            persistsHistory = enabled
+            save()
+        }
+    }
+
+    private func whenLoaded(_ action: @escaping () -> Void) {
+        if isLoading { pendingActions.append(action) }
+        else { action() }
     }
 
     func captureChange() {
+        guard !isPaused else { return }
         let count = pasteboard.changeCount
         guard count != lastChangeCount else { return }
         lastChangeCount = count
         guard !isPaused, let entry = Self.readEntry(from: pasteboard,
                                                     maximumTextBytes: maximumTextBytes,
                                                     maximumImageBytes: maximumImageBytes) else { return }
+        let prepared = entry.prepared()
+        whenLoaded { [self] in insert(prepared) }
+    }
+
+    private func insert(_ entry: ClipboardEntry) {
         if let duplicate = entries.firstIndex(where: { $0.hasSameContent(as: entry) }) {
             var existing = entries.remove(at: duplicate)
             existing.createdAt = Date()
             entries.insert(existing, at: 0)
-        } else {
-            entries.insert(entry, at: 0)
-        }
+        } else { entries.insert(entry, at: 0) }
         trimAndSave()
     }
 
-    func copy(_ entry: ClipboardEntry) {
+    func resolve(_ entry: ClipboardEntry) async throws -> ClipboardEntry {
+        if let storage { return try await storage.resolve(entry) }
+        return entry
+    }
+
+    func copy(_ entry: ClipboardEntry) async {
+        copyRevision += 1
+        let revision = copyRevision
+        let boardRevision = pasteboard.changeCount
+        guard let entry = try? await resolve(entry), revision == copyRevision,
+              pasteboard.changeCount == boardRevision,
+              entries.contains(where: { $0.id == entry.id }) else { return }
+        // Missing payloads never erase the current clipboard.
         pasteboard.clearContents()
         switch entry.kind {
         case .text, .link:
@@ -123,44 +221,40 @@ final class ClipboardHistory: ObservableObject {
             guard let urls = entry.fileURLs, !urls.isEmpty, urls.count <= 20,
                   urls.allSatisfy(\.isFileURL) else { return nil }
         }
-        if let index = entries.firstIndex(where: { $0.hasSameContent(as: entry) }) {
-            var existing = entries.remove(at: index)
-            existing.createdAt = Date()
-            entries.insert(existing, at: 0)
-        } else {
-            entries.insert(entry, at: 0)
-        }
-        trimAndSave()
-        return entries.first
+        let prepared = entry.prepared()
+        whenLoaded { [self] in insert(prepared) }
+        return entries.first(where: { $0.hasSameContent(as: prepared) }) ?? (isLoading ? prepared : nil)
     }
 
     func togglePinned(_ id: UUID) {
-        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
-        entries[index].pinned.toggle()
-        save()
+        whenLoaded { [self] in
+            guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+            entries[index].pinned.toggle()
+            save()
+        }
     }
 
     func remove(_ id: UUID) {
-        entries.removeAll { $0.id == id }
-        save()
+        whenLoaded { [self] in entries.removeAll { $0.id == id }; save() }
     }
 
     func clearUnpinned() {
-        entries.removeAll { !$0.pinned }
-        save()
+        whenLoaded { [self] in entries.removeAll { !$0.pinned }; save() }
     }
 
     func clearAll() {
-        entries.removeAll()
-        save()
+        whenLoaded { [self] in
+            entries.removeAll()
+            Task { await ClipboardThumbnails.shared.clear() }
+            save()
+        }
     }
 
     private func trimAndSave() {
-        if entries.count > maximumEntries {
-            let pins = entries.filter(\.pinned)
-            let recent = entries.filter { !$0.pinned }.prefix(max(0, maximumEntries - pins.count))
-            let keep = Set((pins + recent).map(\.id))
-            entries.removeAll { !keep.contains($0.id) }
+        while entries.count > maximumEntries
+                || entries.reduce(0, { $0 + ($1.payloadBytes ?? 0) }) > maximumPayloadBytes {
+            guard let index = entries.lastIndex(where: { !$0.pinned }) else { break }
+            entries.remove(at: index)
         }
         save()
     }
@@ -196,29 +290,41 @@ final class ClipboardHistory: ObservableObject {
                               text: text)
     }
 
-    private func load() {
-        guard let storageURL,
-              let size = try? storageURL.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-              size <= 256 * 1024 * 1024,
-              let data = try? Data(contentsOf: storageURL),
-              let decoded = try? JSONDecoder().decode([ClipboardEntry].self, from: data) else { return }
-        entries = Array(decoded.prefix(maximumEntries))
+    /// One writer drains the newest snapshot. Mutations during an in-flight
+    /// commit coalesce; completion only swaps payload backing, never UI metadata.
+    private func save() {
+        guard let storage else { return }
+        needsSave = true
+        guard saveTask == nil else { return }
+        saveTask = Task { [weak self] in
+            guard let self else { return }
+            while self.needsSave {
+                self.needsSave = false
+                let snapshot = self.entries
+                let persistent = self.persistsHistory
+                do {
+                    let stored = try await storage.save(snapshot, persistent: persistent)
+                    let byID = Dictionary(uniqueKeysWithValues: stored.map { ($0.id, $0) })
+                    var compacted = self.entries
+                    for index in compacted.indices {
+                        if let entry = byID[compacted[index].id] {
+                            compacted[index].adoptPayload(from: entry)
+                        }
+                    }
+                    if compacted != self.entries { self.entries = compacted }
+                    if self.storageFailed { self.storageFailed = false }
+                } catch {
+                    // Keep inline payloads if disk storage fails; never discard
+                    // the user's only copy or report a failed commit as saved.
+                    self.storageFailed = true
+                }
+            }
+            self.saveTask = nil
+        }
     }
 
-    private func save() {
-        guard persistsHistory, let storageURL else { return }
-        do {
-            let folder = storageURL.deletingLastPathComponent()
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true,
-                                                    attributes: [.posixPermissions: 0o700])
-            try FileManager.default.setAttributes([.posixPermissions: 0o700],
-                                                  ofItemAtPath: folder.path)
-            let data = try JSONEncoder().encode(entries)
-            try data.write(to: storageURL, options: .atomic)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600],
-                                                  ofItemAtPath: storageURL.path)
-        } catch {
-            // Clipboard capture remains usable in memory if local storage fails.
-        }
+    func waitUntilSettled() async {
+        await loadTask?.value
+        await saveTask?.value
     }
 }

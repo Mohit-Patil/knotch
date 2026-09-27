@@ -1,7 +1,0 @@
-# Screen-edge expanded panel
-
-The owner reported the white collapsed handle and the expanded panel starting below the menu bar. The prior cap reached the display edge, but the body was constrained to NSScreen.visibleFrame and added its header below the menu bar.
-
-On a display with a measured camera cutout, both native windows now anchor to NSScreen.frame.maxY using public NSPanel frame constraints. The expanded panel includes the menu-bar band at statusBar level, while retaining the usable horizontal/bottom bounds. Its top corners are square; only the bottom corners are rounded. The title and controls occupy the wings beside the camera. The title width is capped to keep it out of the central cutout. The terminal begins below the 40-point header. The collapsed cap retains 8-point side wings and a 2-point lip, without the gray/white grip. Non-notched display placement is unchanged.
-
-The native fixture qualifies the current built-in display's 38-point camera band: the real panel reaches the screen edge, contains the reported camera rectangle, and places the project title outside it and terminal text below it. It also reruns animation, stable grid, focus, typing/selection locks, auto-minimise and session retention checks. This does not qualify other notch dimensions, external displays, full-screen Spaces, or physical pointer behavior. Existing immediate lock/sleep hiding remains in place.

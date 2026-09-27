@@ -1,0 +1,23 @@
+name: Check
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}/.build/zig-cache
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - run: scripts/setup-ci.sh
+      - run: |
+          scripts/test-models.sh
+          scripts/test-ssh.sh
+          scripts/test-clipboard-storage.sh
+          python3 -m unittest discover -s Tests -p '*release*.py'
+      - run: scripts/bootstrap-engine.sh --build
+      - run: scripts/build.sh

@@ -1,7 +1,0 @@
-{
-  "date": "2026-09-27",
-  "sha256": "e8a29313816f75d42b05db68a825e0dbc7113def2c6c714de6272b26e0a6ce9d",
-  "native_checks": 41,
-  "manual": "Installed Release: plain https://example.com/ with DEC 1000 and SGR 1006 mouse reporting enabled; native right-click menu visible; Open in Browser opened Chrome Example Domain. Test browser tab and shell closed.",
-  "limitations": "No authenticated coding-agent workflow tested."
-}

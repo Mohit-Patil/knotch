@@ -16,7 +16,7 @@ struct ClipboardDragSource: NSViewRepresentable {
     }
 
     func updateNSView(_ view: DragView, context: Context) {
-        view.entry = entry
+        view.setEntry(entry)
         view.onDragChange = onDragChange
         view.onHoverChange = onHoverChange
     }
@@ -24,6 +24,22 @@ struct ClipboardDragSource: NSViewRepresentable {
     @MainActor
     final class DragView: NSView, NSDraggingSource {
         var entry: ClipboardEntry?
+        private var preview: NSImage?
+        private var previewTask: Task<Void, Never>?
+
+        func setEntry(_ value: ClipboardEntry) {
+            let changed = entry?.id != value.id
+            entry = value
+            guard changed else { return }
+            previewTask?.cancel()
+            preview = nil
+            guard value.kind == .image else { return }
+            previewTask = Task { [weak self] in
+                let pixels = await ClipboardThumbnails.shared.image(for: value)
+                guard !Task.isCancelled else { return }
+                self?.preview = pixels.map { NSImage(cgImage: $0, size: .zero) }
+            }
+        }
         var onDragChange: ((Bool) -> Void)?
         var onHoverChange: ((Bool) -> Void)?
         private var hoverTrackingArea: NSTrackingArea?
@@ -47,7 +63,7 @@ struct ClipboardDragSource: NSViewRepresentable {
             writer.setString(entry.id.uuidString, forType: ClipboardTerminalDrop.pasteboardType)
             let item = NSDraggingItem(pasteboardWriter: writer)
             let icon = entry.kind == .image
-                ? entry.data.flatMap(NSImage.init(data:))
+                ? preview
                 : NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: nil)
             let point = convert(event.locationInWindow, from: nil)
             let size = NSSize(width: min(bounds.width, 180), height: min(bounds.height, 120))

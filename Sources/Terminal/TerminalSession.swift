@@ -6,6 +6,7 @@ protocol TerminalSession: AnyObject {
     var id: UUID { get }
     var view: NSView { get }
     var directory: URL { get }
+    var launchTarget: TerminalLaunchTarget { get }
     /// Title emitted by the terminal program. Empty until the first title action.
     var title: String { get }
     /// An app-level rename, which takes precedence over terminal title actions.
@@ -22,6 +23,10 @@ protocol TerminalSession: AnyObject {
     func setPresented(_ value: Bool)
     func setFocused(_ value: Bool)
     func closeAfterConfirmation()
+}
+
+extension TerminalSession {
+    var launchTarget: TerminalLaunchTarget { .local(directory) }
 }
 
 enum TerminalFailure: LocalizedError {
@@ -41,7 +46,11 @@ final class SessionStore {
     }
 
     func open(runtime: GhosttyRuntime, directory: URL) throws {
-        let opened = try GhosttySession(runtime: runtime, directory: directory)
+        try open(runtime: runtime, target: .local(directory))
+    }
+
+    func open(runtime: GhosttyRuntime, target: TerminalLaunchTarget) throws {
+        let opened = try GhosttySession(runtime: runtime, target: target)
         sessions.append(opened)
         selectedID = opened.id
     }

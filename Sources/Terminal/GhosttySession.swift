@@ -4,6 +4,7 @@ import GhosttyKit
 @MainActor
 final class GhosttySession: TerminalSession {
     let id = UUID()
+    let launchTarget: TerminalLaunchTarget
     let directory: URL
     let nativeView = GhosttyNativeView(frame: NSRect(x: 0, y: 0, width: 960, height: 480))
     var view: NSView { nativeView }
@@ -24,6 +25,7 @@ final class GhosttySession: TerminalSession {
         if let customTitle { return customTitle }
         if let tabTitle { return tabTitle }
         if !title.isEmpty { return title }
+        if let connection = launchTarget.remoteConnection { return connection.name }
         let fallback = directory.standardizedFileURL == FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
             ? "Home" : directory.lastPathComponent
         let safeTitle = Self.sanitizeTitle(fallback)
@@ -101,7 +103,20 @@ final class GhosttySession: TerminalSession {
         presented && surface != nil && NSApp.isActive && nativeView.window?.isKeyWindow == true
     }
 
-    init(runtime: GhosttyRuntime, directory: URL, testCommand: String? = nil) throws {
+    convenience init(runtime: GhosttyRuntime, directory: URL, testCommand: String? = nil) throws {
+        try self.init(runtime: runtime, target: .local(directory), testCommand: testCommand)
+    }
+
+    init(runtime: GhosttyRuntime, target: TerminalLaunchTarget, testCommand: String? = nil) throws {
+        self.launchTarget = target
+        let directory = target.localDirectory
+        var sshCommand = try target.remoteConnection?.launchCommand()
+        #if HARNESS_TESTS
+        if let command = sshCommand, let fixtureConfig = ProcessInfo.processInfo.environment["KNOTCH_SSH_FIXTURE_CONFIG"] {
+            sshCommand = command.replacingOccurrences(of: SSHConnection.quote("/usr/bin/ssh"),
+                with: SSHConnection.quote("/usr/bin/ssh") + " -F " + SSHConnection.quote(fixtureConfig))
+        }
+        #endif
         self.runtime = runtime
         self.directory = directory
         var isDirectory: ObjCBool = false
@@ -115,9 +130,15 @@ final class GhosttySession: TerminalSession {
         config.userdata = Unmanaged.passUnretained(self).toOpaque()
         config.scale_factor = Double(NSScreen.main?.backingScaleFactor ?? 2)
         config.wait_after_command = true
-        // Shipping alpha uses the engine's system login-shell discovery. No launch-string injection.
+        // Local tabs retain system login-shell discovery; SSH uses a validated, quoted launch specification.
         self.surface = directory.path.withCString { path in
             config.working_directory = path
+            if let sshCommand {
+                return sshCommand.withCString { command in
+                    config.command = command
+                    return ghostty_surface_new(app, &config)
+                }
+            }
             #if HARNESS_TESTS
             if let testCommand {
                 return testCommand.withCString { command in
@@ -131,7 +152,7 @@ final class GhosttySession: TerminalSession {
         guard let surface else { throw TerminalFailure.unavailable("Ghostty could not create the native terminal surface.") }
         nativeView.surface = surface
         nativeView.syncGeometry()
-        status = "Session running"
+        status = target.remoteConnection == nil ? "Session running" : "SSH process running"
         isRunning = true
     }
 

@@ -9,6 +9,7 @@ die() { printf 'build: %s\n' "$*" >&2; exit 1; }
 command -v xcodegen >/dev/null || die "xcodegen is required; install it separately"
 command -v xcodebuild >/dev/null || die "Xcode is required"
 "$ROOT/scripts/bootstrap-engine.sh" --verify
+"$ROOT/scripts/bootstrap-sparkle.sh"
 
 ENGINE="$ROOT/.build/ghostty"
 FRAMEWORK="$ENGINE/macos/GhosttyKit.xcframework"
@@ -40,22 +41,6 @@ fi
 
 APP="$DERIVED/Build/Products/Release/Knotch.app"
 [[ -d "$APP/Contents/MacOS" ]] || die "Xcode did not produce $APP"
-RESOURCES="$APP/Contents/Resources"
-mkdir -p "$RESOURCES/ThirdParty"
-# Xcode can leave prior resource copies in an incremental product. Replace just
-# the generated engine directories, so removed upstream files cannot linger.
-rm -rf "$RESOURCES/ghostty" "$RESOURCES/terminfo" "$RESOURCES/ThirdParty/Ghostty-LICENSE"
-mkdir -p "$RESOURCES/ghostty"
-# Bundle themes from the same pinned dependency as the native engine.
-ditto "$RESOURCE_SOURCE/ghostty/themes" "$RESOURCES/ghostty/themes"
-ditto "$RESOURCE_SOURCE/ghostty/shell-integration" "$RESOURCES/ghostty/shell-integration"
-ditto "$RESOURCE_SOURCE/terminfo" "$RESOURCES/terminfo"
-ditto "$ROOT/ThirdParty/Notices" "$RESOURCES/ThirdParty/Notices"
-ditto "$ROOT/ThirdParty/README.md" "$RESOURCES/ThirdParty/README.md"
-printf '%s\n' '982fe90d941e4b4aab4905ffcbcfdea60bd83343' > "$RESOURCES/engine-revision.txt"
-[[ -f "$RESOURCES/terminfo/78/xterm-ghostty" ]] || die "bundled terminfo copy failed"
-[[ -d "$RESOURCES/ghostty/shell-integration" ]] || die "bundled shell integration copy failed"
-
 codesign --force --sign - "$APP"
 codesign --verify --strict "$APP"
 printf 'Built and ad-hoc signed %s\n' "$APP"

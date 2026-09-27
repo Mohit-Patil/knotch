@@ -8,9 +8,9 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
         let title: String
         let directory: String
         let running: Bool
+        var remoteIdentity: String? = nil
         var isSettings = false
         var isClipboard = false
-        var isTools = false
     }
     private final class TabButton: NSButton {
         var sessionID: UUID?
@@ -121,9 +121,9 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
         var sessionX: CGFloat = 4
         var utilityX: CGFloat = 8
         for item in items {
-            let isUtility = item.isSettings || item.isClipboard || item.isTools
+            let isUtility = item.isSettings || item.isClipboard
             let active = item.id == selected
-            let width: CGFloat = item.isClipboard ? 104 : (item.isSettings ? 80 : (item.isTools ? 74 : sessionWidth))
+            let width: CGFloat = item.isClipboard ? 104 : (item.isSettings ? 80 : sessionWidth)
             let x: CGFloat = isUtility ? utilityX : sessionX
             let cell = NSView(frame: NSRect(x: x, y: 5, width: width, height: 28))
             cell.wantsLayer = true
@@ -132,19 +132,19 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
             let buttonWidth = isUtility ? width - 16 : width - 36
             let button = TabButton(frame: NSRect(x: 8, y: 0, width: buttonWidth, height: 28))
             button.sessionID = item.id
-            button.title = item.title
+            button.title = item.remoteIdentity.map { "SSH · \($0) · \(item.title)" } ?? item.title
             button.font = .systemFont(ofSize: 12, weight: active ? .medium : .regular)
             button.alignment = .left
             button.isBordered = false
             button.setButtonType(.toggle)
             button.state = active ? .on : .off
             button.cell?.lineBreakMode = .byTruncatingTail
-            button.image = NSImage(systemSymbolName: item.isTools ? "square.grid.2x2" : (item.isSettings ? "gearshape" : (item.isClipboard ? "doc.on.clipboard" : (item.running ? "terminal" : "stop.circle"))), accessibilityDescription: nil)
+            button.image = NSImage(systemSymbolName: item.isSettings ? "gearshape" : (item.isClipboard ? "doc.on.clipboard" : (item.running ? "terminal" : "stop.circle")), accessibilityDescription: nil)
             button.imagePosition = .imageLeading
             button.contentTintColor = active ? .white : .secondaryLabelColor
-            let status = item.isTools ? "Everyday utilities" : item.isSettings ? "Preferences" : (item.isClipboard ? "Clipboard history" : (item.running ? "Shell running" : "Session ended"))
-            button.toolTip = item.isTools ? "Tools inside Knotch" : item.isSettings ? "Settings inside Knotch" : (item.isClipboard ? "Clipboard history inside Knotch" : "\(item.title)\n\(item.directory)\n\(status) · Double-click to rename")
-            button.setAccessibilityLabel("\(item.title), \(status)\(active ? ", selected" : "")")
+            let status = item.isSettings ? "Preferences" : (item.isClipboard ? "Clipboard history" : (item.running ? (item.remoteIdentity == nil ? "Shell running" : "SSH process running") : "Session ended"))
+            button.toolTip = item.isSettings ? "Settings inside Knotch" : (item.isClipboard ? "Clipboard history inside Knotch" : "\(item.title)\n\(item.directory)\n\(status) · Double-click to rename")
+            button.setAccessibilityLabel("\(button.title), \(status)\(active ? ", selected" : "")")
             button.target = self
             button.action = #selector(selectTab(_:))
             if !isUtility {

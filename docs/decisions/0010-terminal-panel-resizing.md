@@ -1,9 +1,0 @@
-# Terminal panel resizing
-
-The terminal panel can be sized without moving its screen-edge top. Only its bottom 8-point strip and two lower 20-point corners accept drags; neither side edge does. Bottom drags change height only. Corner drags change height and symmetric width, preserving the screen-centered layout where the visible frame allows it. The size is limited to at least 520×280 points (or the display's smaller usable size) and at most the current display's usable bounds.
-
-Later update: [the shared-panel-size decision](0013-shared-panel-size.md) replaces the separate compact dimensions described below. Resizing now changes every tab's panel size.
-
-Settings now exposes width and height sliders, a display-default reset, and a short pointer instruction. A custom size is stored in `panel.terminal-size.v1`; it is reapplied after launch and clamped when screen geometry changes. Empty and Settings surfaces use their own compact dimensions. Resizing changes the existing native Ghostty surface and PTY grid; it does not open a new shell or switch terminal engines. The controller holds its interaction lock during a drag so pointer exit cannot minimise midway.
-
-`scripts/test-models.sh`, `scripts/build.sh --test`, the Release build, signature verification, and `scripts/test-native.sh settings` passed. The focused native run includes a real terminal grid resize with unchanged surface and shell PID, reset to current display default, and Settings/session retention. In an isolated signed app, Settings rendered and its sliders changed a running terminal from 1280×720 to approximately 1833×473 points; quitting and relaunching restored those values, and Reset returned them to 1280×720. A computer-control drag did not move either the terminal or a standard SwiftUI slider, so physical pointer resizing remains unqualified. The canonical installed process had a live shell and was not restarted during this change.

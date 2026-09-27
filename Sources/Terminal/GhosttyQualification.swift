@@ -324,52 +324,18 @@ enum HarnessQualification {
             try await waitFor({ screen(session).contains("\nSETTINGS_BACKGROUND_DONE") }, description: "output while Settings is selected")
             coordinator.selectSession(id: session.id)
             try check("Settings return keeps shell", coordinator.statusLabel.stringValue != "Settings" && session.view.superview === coordinator.container && session.surface == surface && ghostty_surface_foreground_pid(surface) == pid && screen(session).contains("\nSETTINGS_BACKGROUND_DONE"), "Returning from Settings presented the same surface, shell PID, and background output")
-            coordinator.showTools()
-            overlay.settlePresentationForFixture()
-            try check("Tools share the retained workspace",
-                      coordinator.isToolsSelectedForFixture && session.view.superview == nil
-                        && session.surface == surface && overlay.layout?.panelFrame.size == CGSize(width: 720, height: 550)
-                        && coordinator.shelfHeightForFixture == 0,
-                      "Tools use the same panel, hide the Clipboard shelf, and retain the real terminal surface")
-            guard let tools = coordinator.toolsStoreForFixture else { throw TerminalFailure.unavailable("No tools store") }
-            try check("Tools catalog", KnotchTool.allCases.count == 19 && Set(KnotchTool.allCases.map(\.id)).count == 19,
-                      "Nineteen distinct utilities supplement Terminal and Clipboard")
-            tools.selected = .notes
-            coordinator.window?.layoutIfNeeded()
-            try check("Utility navigation preserves shell", tools.isVisible && session.surface == surface
-                      && ghostty_surface_foreground_pid(surface) == pid && !session.view.isDescendant(of: coordinator.container),
-                      "Opening a local tool never creates or replaces a terminal")
-            tools.context.beginDialog()
-            tools.context.beginDialog()
-            tools.context.endDialog()
-            try check("Tools nested dialog hold", overlay.panel.level == .normal
-                      && overlay.state.interactionLocks.contains("tools-dialog"),
-                      "Nested native tool dialogs retain the overlay lock and lowered level until final dismissal")
-            tools.context.endDialog()
-            try check("Tools dialog release", overlay.panel.level == .statusBar
-                      && !overlay.state.interactionLocks.contains("tools-dialog"),
-                      "Final dismissal restores the window level and releases the interaction lock")
             let sheet = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 280, height: 120),
                                 styleMask: [.titled], backing: .buffered, defer: false)
             sheet.isReleasedWhenClosed = false
             overlay.panel.beginSheet(sheet, completionHandler: { _ in })
             try await waitFor({ overlay.state.interactionLocks.contains("native-sheet") }, description: "native sheet hold")
-            try check("Native sheet stays above tools", overlay.panel.level == .normal,
+            try check("Native sheet stays above workspace", overlay.panel.level == .normal,
                       "Actual attached NSPanel sheet holds presentation and lowers the workspace")
             overlay.panel.endSheet(sheet)
             sheet.orderOut(nil)
             try await waitFor({ !overlay.state.interactionLocks.contains("native-sheet") }, description: "native sheet dismissal")
             try check("Native sheet releases visibility", overlay.panel.level == .statusBar,
                       "Dismissal releases the sheet hold and restores the workspace level")
-            coordinator.hideTerminal()
-            try check("Hidden tools suspend sensitive services", !tools.isVisible && tools.mirror.state == .idle,
-                      "Hiding propagates service visibility and leaves the camera idle without requesting permission")
-            coordinator.selectSession(id: session.id)
-            try check("Tools return keeps shell", !coordinator.isToolsSelectedForFixture
-                      && session.view.superview === coordinator.container && session.surface == surface
-                      && ghostty_surface_foreground_pid(surface) == pid,
-                      "Returning from Tools presents the same live Ghostty surface and shell PID")
-            tools.shutdown()
             let notifications = coordinator.agentNotifications
             notifications.enabled = true
             notifications.onLeft = false

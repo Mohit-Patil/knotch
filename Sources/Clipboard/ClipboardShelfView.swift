@@ -23,7 +23,7 @@ struct ClipboardShelfView: View {
                             ClipboardShelfCard(
                                 entry: entry,
                                 canInsert: canInsert,
-                                onCopy: { history.copy(entry) },
+                                onCopy: { Task { await history.copy(entry) } },
                                 onInsert: { onInsert(entry.id) },
                                 onDragChange: onDragChange
                             )
@@ -128,20 +128,6 @@ private struct ClipboardShelfCard: View {
         !isDragging && (isHovered || cardFocused || focusedAction != nil)
     }
 
-    // Decode at most once for each card construction, including image cards.
-    private let previewImage: NSImage?
-
-    init(entry: ClipboardEntry, canInsert: Bool, onCopy: @escaping () -> Void,
-         onInsert: @escaping () -> Void,
-         onDragChange: @escaping (Bool) -> Void) {
-        self.entry = entry
-        self.canInsert = canInsert
-        self.onCopy = onCopy
-        self.onInsert = onInsert
-        self.onDragChange = onDragChange
-        previewImage = entry.kind == .image ? entry.data.flatMap(NSImage.init(data:)) : nil
-    }
-
     var body: some View {
         preview
             .frame(width: 166, height: 102)
@@ -209,10 +195,8 @@ private struct ClipboardShelfCard: View {
 
     @ViewBuilder
     private var preview: some View {
-        if let previewImage {
-            Image(nsImage: previewImage)
-                .resizable()
-                .scaledToFit()
+        if entry.kind == .image {
+            ClipboardThumbnail(entry: entry)
         } else {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 4) {
@@ -249,7 +233,7 @@ private struct ClipboardShelfCard: View {
             if urls.count > 3 { names.append("+\(urls.count - 3) more") }
             return names.joined(separator: "\n")
         }
-        let text = entry.text ?? entry.label
+        let text = entry.text ?? entry.textPreview ?? entry.label
         return text.isEmpty ? "Untitled item" : String(text.prefix(640))
     }
 

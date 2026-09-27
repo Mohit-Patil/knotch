@@ -60,7 +60,7 @@ final class GhosttyRuntime {
         self.config = config
         var qualification = false
         #if HARNESS_TESTS
-        qualification = CommandLine.arguments.contains("--self-test") || CommandLine.arguments.contains("--overlay-self-test") || CommandLine.arguments.contains("--settings-self-test")
+        qualification = CommandLine.arguments.contains("--ssh-self-test") || CommandLine.arguments.contains("--self-test") || CommandLine.arguments.contains("--overlay-self-test") || CommandLine.arguments.contains("--settings-self-test")
         #endif
         // Use Ghostty's own discovery/precedence, including config-file includes.
         // Automated PTY fixtures must not load personal commands or keybindings.

@@ -5,3 +5,5 @@
 xcuserdata/
 
 Knotch.xcodeproj/
+__pycache__/
+*.pyc

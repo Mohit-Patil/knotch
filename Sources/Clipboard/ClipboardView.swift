@@ -113,6 +113,10 @@ struct ClipboardView: View {
             .padding(10)
             .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 9))
 
+            if history.storageFailed {
+                Text("Clipboard storage is unavailable. New items are kept in memory until storage recovers.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
             filters
 
             if visible.isEmpty {
@@ -181,6 +185,7 @@ struct ClipboardView: View {
     }
 
     private var emptyTitle: String {
+        if history.isLoading { return "Loading clipboard history" }
         if !query.isEmpty { return "No matching items" }
         if history.entries.isEmpty && history.isPaused { return "Capture paused" }
         return selectedFilter.emptyTitle
@@ -220,7 +225,7 @@ struct ClipboardView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 10) {
                     ForEach(imageEntries) { entry in
-                        imageTile(entry, image: entry.data.flatMap(NSImage.init(data:)))
+                        imageTile(entry)
                             .id(entry.id)
                     }
                 }
@@ -264,19 +269,9 @@ struct ClipboardView: View {
         }
     }
 
-    private func imageTile(_ entry: ClipboardEntry, image: NSImage?) -> some View {
+    private func imageTile(_ entry: ClipboardEntry) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Group {
-                if let image {
-                    Image(nsImage: image)
-                        .resizable()
-                        .scaledToFit()
-                } else {
-                    Image(systemName: "photo")
-                        .font(.system(size: 24, weight: .light))
-                        .foregroundStyle(.white.opacity(0.42))
-                }
-            }
+            ClipboardThumbnail(entry: entry)
             .frame(width: 210, height: 130)
             .background(.black.opacity(0.19), in: RoundedRectangle(cornerRadius: 8))
             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -330,7 +325,7 @@ struct ClipboardView: View {
 
     private func actions(for entry: ClipboardEntry) -> some View {
         HStack(spacing: 10) {
-            Button { history.copy(entry) } label: {
+            Button { Task { await history.copy(entry) } } label: {
                 Text("Copy")
                     .font(.system(size: 11, weight: .medium))
                     .fixedSize()
@@ -366,10 +361,8 @@ struct ClipboardView: View {
 
     @ViewBuilder
     private func thumbnail(_ entry: ClipboardEntry) -> some View {
-        if entry.kind == .image, let data = entry.data, let image = NSImage(data: data) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
+        if entry.kind == .image {
+            ClipboardThumbnail(entry: entry)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
         } else {
             Image(systemName: symbol(entry.kind))
