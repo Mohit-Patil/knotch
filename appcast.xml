@@ -4,17 +4,17 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>Knotch</title>
         <item>
-            <title>0.1.1</title>
-            <pubDate>Sun, 27 Sep 2026 05:15:04 +0000</pubDate>
+            <title>0.1.2</title>
+            <pubDate>Sun, 27 Sep 2026 05:54:48 +0000</pubDate>
             <link>https://github.com/Mohit-Patil/knotch</link>
-            <sparkle:version>0.1.1</sparkle:version>
-            <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
+            <sparkle:version>0.1.2</sparkle:version>
+            <sparkle:shortVersionString>0.1.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/Mohit-Patil/knotch/releases/download/v0.1.1/Knotch.zip" length="10333655" type="application/octet-stream" sparkle:edSignature="5cxQAA+1qSTaSsRVuHx3zaXOHvJldzNL5XB2YDWUvTe0ScERob7vt3wBbcenz8RPiBwhJHH6rSzWTJCB9AR5Bw=="></enclosure>
+            <enclosure url="https://github.com/Mohit-Patil/knotch/releases/download/v0.1.2/Knotch.zip" length="10346786" type="application/octet-stream" sparkle:edSignature="ci2CoFVLFwqUzRKjOaBJ5Opsq6bLFcdMDCNTRofTVKdBHpAO9QQbxwDQvoLK4I+rXeliBdMQawLMR5Q4aXR7DQ=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: fZj91fn7i8/j2OU2xXvzQOvoRHQEUR0EIreAN/AU9pSl22CS50K81TytI+cEdeSHg5XO6brvvXF/wTrgb9RVDA==
+edSignature: 96u0tyODVG9DwLsp/T+ceePEUQx+iBngvWDgCggFVjMi29HdZiHtVxM67h4WMZlbemSQGbcpQjsASkQiSaxNCg==
 length: 1179
 -->
