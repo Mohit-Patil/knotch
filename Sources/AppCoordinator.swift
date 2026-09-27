@@ -4,6 +4,15 @@ import SwiftUI
 @MainActor
 final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let updates = UpdateController()
+    private lazy var terminalConfiguration: TerminalConfiguration = {
+        let controller = TerminalConfiguration()
+        controller.reload = { [weak self] in
+            guard let runtime = self?.runtime else { throw TerminalFailure.unavailable("The terminal is not ready.") }
+            try runtime.reloadConfiguration()
+        }
+        controller.beforeOpen = { [weak self] in self?.hideTerminal() }
+        return controller
+    }()
     var runtime: GhosttyRuntime?
     let store = SessionStore()
     let sshConnections = SSHConnectionStore()
@@ -108,7 +117,12 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
             updates.start()
         }
         makeMenu()
-        do { runtime = try GhosttyRuntime() }
+        do {
+            runtime = try GhosttyRuntime()
+            runtime?.onOpenConfiguration = { [weak self] in self?.terminalConfiguration.openConfiguration() }
+            runtime?.onConfigurationError = { [weak self] message in self?.terminalConfiguration.report(message) }
+            if let error = runtime?.lastConfigurationError { terminalConfiguration.report(error) }
+        }
         catch {
             #if HARNESS_TESTS
             if CommandLine.arguments.contains("--self-test") {
@@ -976,7 +990,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 setClipboardPersists: { [weak self] enabled in
                     self?.clipboard?.setPersistsHistory(enabled)
                     UserDefaults.standard.set(enabled, forKey: "clipboard.persist.v1")
-                }, updates: updates)
+                }, updates: updates, terminalConfiguration: terminalConfiguration)
         }
         guard let settingsView else { return }
         if !settingsSelected {

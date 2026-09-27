@@ -69,7 +69,7 @@ final class ShortcutController: NSObject {
                           notifications: AgentNotificationController,
                           clipboardPersists: Bool,
                           setClipboardPersists: @escaping (Bool) -> Void,
-                          updates: UpdateController) -> NSView {
+                          updates: UpdateController, terminalConfiguration: TerminalConfiguration) -> NSView {
         NSHostingView(rootView: AccessSettings(controller: self, initialHover: hoverEnabled,
                                                setHover: setHover, onRecordingChange: onRecordingChange,
                                                panelSize: panelSize, defaultPanelSize: defaultPanelSize,
@@ -78,7 +78,7 @@ final class ShortcutController: NSObject {
                                                setPanelSize: setPanelSize,
                                                notifications: notifications,
                                                clipboardPersists: clipboardPersists,
-                                               setClipboardPersists: setClipboardPersists, updates: updates))
+                                               setClipboardPersists: setClipboardPersists, updates: updates, terminalConfiguration: terminalConfiguration))
     }
 
     func shutdown() {
@@ -92,6 +92,7 @@ final class ShortcutController: NSObject {
 private struct AccessSettings: View {
     @ObservedObject var updates: UpdateController
     let notifications: AgentNotificationController
+    @ObservedObject var terminalConfiguration: TerminalConfiguration
     let controller: ShortcutController
     let setHover: (Bool) -> Void
     let onRecordingChange: (Bool) -> Void
@@ -113,7 +114,8 @@ private struct AccessSettings: View {
          panelSizeIsCustom: Bool, setPanelSize: @escaping (CGSize?) -> Void,
          notifications: AgentNotificationController,
          clipboardPersists: Bool, setClipboardPersists: @escaping (Bool) -> Void,
-         updates: UpdateController) {
+         updates: UpdateController, terminalConfiguration: TerminalConfiguration) {
+        self.terminalConfiguration = terminalConfiguration
         self.updates = updates
         self.notifications = notifications
         self.controller = controller
@@ -170,6 +172,20 @@ private struct AccessSettings: View {
                 }
                 Text(message).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Terminal configuration").font(.headline)
+                Text("Customize theme, font family, font size, and other Ghostty options in one global file.").font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Button("Open terminal config") { terminalConfiguration.openConfiguration() }
+                    Button("Reload terminal config") { terminalConfiguration.reloadConfiguration() }
+                }
+                Text(terminalConfiguration.url.path).font(.caption.monospaced()).textSelection(.enabled)
+                Text(terminalConfiguration.message).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Link("Ghostty configuration reference", destination: URL(string: "https://ghostty.org/docs/config/reference")!)
+                    .font(.caption)
             }
             Divider()
             VStack(alignment: .leading, spacing: 10) {

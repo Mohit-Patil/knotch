@@ -8,6 +8,10 @@ final class GhosttyRuntime {
     private(set) var app: ghostty_app_t?
     private var config: ghostty_config_t?
     private var observers: [NSObjectProtocol] = []
+    private var loadsPersonalConfiguration = true
+    private(set) var lastConfigurationError: String?
+    var onOpenConfiguration: (() -> Void)?
+    var onConfigurationError: ((String) -> Void)?
 
     #if HARNESS_TESTS
     func appearanceReport() -> [String: Any] {
@@ -56,28 +60,21 @@ final class GhosttyRuntime {
         guard ghostty_init(1, &args) == GHOSTTY_SUCCESS else {
             throw TerminalFailure.unavailable("Ghostty initialization failed.")
         }
-        guard let config = ghostty_config_new() else { throw TerminalFailure.unavailable("Ghostty configuration allocation failed.") }
-        self.config = config
         var qualification = false
         #if HARNESS_TESTS
         qualification = CommandLine.arguments.contains("--ssh-self-test") || CommandLine.arguments.contains("--self-test") || CommandLine.arguments.contains("--overlay-self-test") || CommandLine.arguments.contains("--settings-self-test")
         #endif
-        // Use Ghostty's own discovery/precedence, including config-file includes.
-        // Automated PTY fixtures must not load personal commands or keybindings.
-        if !qualification {
-            ghostty_config_load_default_files(config)
-            ghostty_config_load_recursive_files(config)
+        loadsPersonalConfiguration = !qualification
+        let config: ghostty_config_t
+        do {
+            config = try Self.makeConfiguration(loadPersonal: loadsPersonalConfiguration,
+                                                file: loadsPersonalConfiguration ? TerminalConfiguration.fileURL : nil)
+        } catch {
+            // A broken user file must not prevent opening Settings to repair it.
+            lastConfigurationError = "Configuration could not be loaded; using Ghostty defaults. \(error.localizedDescription)"
+            config = try Self.makeConfiguration(loadPersonal: false, file: nil)
         }
-        ghostty_config_finalize(config)
-        guard ghostty_config_diagnostics_count(config) == 0 else {
-            var messages: [String] = []
-            for index in 0..<ghostty_config_diagnostics_count(config) {
-                if let message = ghostty_config_get_diagnostic(config, index).message { messages.append(String(cString: message)) }
-            }
-            ghostty_config_free(config)
-            self.config = nil
-            throw TerminalFailure.unavailable("Ghostty configuration is invalid: " + messages.joined(separator: "; "))
-        }
+        self.config = config
         var callbacks = ghostty_runtime_config_s()
         callbacks.userdata = Unmanaged.passUnretained(self).toOpaque()
         callbacks.supports_selection_clipboard = false
@@ -89,8 +86,21 @@ final class GhosttyRuntime {
                 if let app = runtime?.app { ghostty_app_tick(app) }
             }
         }
-        callbacks.action_cb = { _, target, action in
+        callbacks.action_cb = { app, target, action in
             MainActor.assumeIsolated {
+                if let app, let pointer = ghostty_app_userdata(app) {
+                    let runtime = Unmanaged<GhosttyRuntime>.fromOpaque(pointer).takeUnretainedValue()
+                    if action.tag == GHOSTTY_ACTION_RELOAD_CONFIG {
+                        do { try runtime.reloadConfiguration() }
+                        catch { runtime.onConfigurationError?(error.localizedDescription) }
+                        return true
+                    }
+                    if action.tag == GHOSTTY_ACTION_OPEN_CONFIG {
+                        runtime.onOpenConfiguration?()
+                        return true
+                    }
+                    if action.tag == GHOSTTY_ACTION_CONFIG_CHANGE && target.tag == GHOSTTY_TARGET_APP { return true }
+                }
                 guard target.tag == GHOSTTY_TARGET_SURFACE,
                       let surface = target.target.surface,
                       let pointer = ghostty_surface_userdata(surface) else { return false }
@@ -163,6 +173,60 @@ final class GhosttyRuntime {
             })
         }
     }
+
+    private static func makeConfiguration(loadPersonal: Bool, file: URL?) throws -> ghostty_config_t {
+        guard let candidate = ghostty_config_new() else {
+            throw TerminalFailure.unavailable("Ghostty configuration allocation failed.")
+        }
+        if loadPersonal { ghostty_config_load_default_files(candidate) }
+        // Finish the inherited include chain before loading Knotch's global overrides.
+        ghostty_config_load_recursive_files(candidate)
+        if let file, FileManager.default.fileExists(atPath: file.path) {
+            // Clear the already-consumed include list so recursive loading doesn't
+            // reapply inherited values over the Knotch configuration.
+            let reset = FileManager.default.temporaryDirectory.appendingPathComponent("knotch-config-\(UUID().uuidString)")
+            do {
+                try "config-file =\n".write(to: reset, atomically: true, encoding: .utf8)
+                defer { try? FileManager.default.removeItem(at: reset) }
+                reset.path.withCString { ghostty_config_load_file(candidate, $0) }
+                file.path.withCString { ghostty_config_load_file(candidate, $0) }
+                ghostty_config_load_recursive_files(candidate)
+            } catch {
+                ghostty_config_free(candidate)
+                throw error
+            }
+        }
+        ghostty_config_finalize(candidate)
+        var messages: [String] = []
+        for index in 0..<ghostty_config_diagnostics_count(candidate) {
+            if let message = ghostty_config_get_diagnostic(candidate, index).message {
+                messages.append(String(cString: message))
+            }
+        }
+        guard messages.isEmpty else {
+            ghostty_config_free(candidate)
+            throw TerminalFailure.unavailable(messages.joined(separator: "; "))
+        }
+        return candidate
+    }
+
+    func reloadConfiguration() throws {
+        try reloadConfiguration(file: loadsPersonalConfiguration ? TerminalConfiguration.fileURL : nil)
+    }
+
+    private func reloadConfiguration(file: URL?) throws {
+        guard let app else { throw TerminalFailure.unavailable("The terminal engine is not running.") }
+        // Validate an entirely new config before changing any existing surface.
+        let candidate = try Self.makeConfiguration(loadPersonal: loadsPersonalConfiguration, file: file)
+        ghostty_app_update_config(app, candidate)
+        if let config { ghostty_config_free(config) }
+        config = candidate
+        lastConfigurationError = nil
+    }
+
+    #if HARNESS_TESTS
+    func reloadConfigurationForFixture(file: URL) throws { try reloadConfiguration(file: file) }
+    #endif
 
     func shutdown() {
         observers.forEach(NotificationCenter.default.removeObserver)
