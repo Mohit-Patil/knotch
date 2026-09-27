@@ -208,7 +208,13 @@ private struct AccessSettings: View {
             }
             Divider()
             VStack(alignment: .leading, spacing: 10) {
-                Text("Updates").font(.headline)
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Knotch updates").font(.headline)
+                    Spacer()
+                    Text("Version \(updates.version) · Build \(updates.build)")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
                 HStack {
                     Button("Check for updates") { updates.checkForUpdates(nil) }
                         .disabled(!updates.canCheck || updates.canRestart)

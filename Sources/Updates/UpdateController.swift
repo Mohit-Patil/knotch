@@ -4,9 +4,11 @@ import Sparkle
 
 @MainActor
 final class UpdateController: NSObject, ObservableObject, NSMenuItemValidation {
+    let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+    let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unknown"
     @Published private(set) var canCheck = false
     @Published private(set) var canRestart = false
-    @Published private(set) var status = "Updates are available in release builds."
+    @Published private(set) var status = "This is a local build. Install a release build to receive updates."
     private var updater: SPUUpdater?
     private var driver: KnotchUpdateDriver?
     private var observation: NSKeyValueObservation?
