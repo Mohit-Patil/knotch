@@ -21,7 +21,7 @@ jobs:
       ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}/.build/zig-cache
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
       NOTARY_PROFILE: knotch-notary
-      SPARKLE_PRIVATE_KEY_FILE: ${{ runner.temp }}/sparkle-private-key
+      SPARKLE_PRIVATE_KEY_FILE: ${{ github.workspace }}/.build/sparkle-private-key
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
