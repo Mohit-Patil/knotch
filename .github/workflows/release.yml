@@ -35,7 +35,7 @@ jobs:
           scripts/test-ssh.sh
           scripts/test-clipboard-storage.sh
           python3 -m unittest discover -s Tests -p '*release*.py'
-      - run: scripts/bootstrap-engine.sh --build
+      - uses: ./.github/actions/prepare-engine
       - name: Configure signing
         env:
           DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}

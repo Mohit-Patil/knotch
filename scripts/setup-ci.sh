@@ -3,8 +3,6 @@ set -euo pipefail
 : "${RUNNER_TEMP:?Run on a GitHub Actions macOS runner}"
 sudo xcode-select -s /Applications/Xcode_27.app
 [[ "$(xcrun --show-sdk-version)" == 27.0 ]]
-xcodebuild -downloadComponent MetalToolchain
-xcrun metal --version
 command -v xcodegen >/dev/null || brew install xcodegen
 curl --fail --location --retry 3 --silent --show-error \
   https://ziglang.org/download/0.16.0/zig-aarch64-macos-0.16.0.tar.xz -o "$RUNNER_TEMP/zig.tar.xz"

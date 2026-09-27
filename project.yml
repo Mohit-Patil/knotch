@@ -11,8 +11,8 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: '26.0'
     CLANG_ENABLE_MODULES: YES
     ENABLE_HARDENED_RUNTIME: NO
-    MARKETING_VERSION: 0.1.0
-    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 0.1.1
+    CURRENT_PROJECT_VERSION: 0.1.1
     KNOTCH_UPDATES_ENABLED: NO
     SPARKLE_FEED_URL: https://raw.githubusercontent.com/Mohit-Patil/knotch/updates/appcast.xml
     SPARKLE_PUBLIC_KEY: AIi1wk9qThRWg/2emJjyCchPts/Pdfuhrh9sf+fa5jg=
