@@ -71,6 +71,24 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
                 ? NSColor.controlAccentColor.withAlphaComponent(0.35).cgColor : NSColor.clear.cgColor
         }
     }
+    private final class TabCell: NSView {
+        let button = TabButton()
+        let close = TabButton()
+        let underline = NSView()
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            layer?.cornerRadius = 7
+            addSubview(button)
+            addSubview(close)
+            underline.wantsLayer = true
+            underline.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.85).cgColor
+            addSubview(underline)
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    }
+    private var cells: [UUID: TabCell] = [:]
     var onSelect: ((UUID) -> Void)?
     var onClose: ((UUID) -> Void)?
     var onRename: ((UUID) -> Void)?
@@ -115,8 +133,13 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
         displayedItems = items
         let changedSelection = selectedID != selected
         selectedID = selected
-        document.subviews.forEach { $0.removeFromSuperview() }
-        utilityGroup.subviews.filter { $0 !== utilityDivider }.forEach { $0.removeFromSuperview() }
+        // OSC title/status updates can arrive while NSButton is tracking a
+        // mouse press. Retain each control until its session actually closes:
+        // detaching it here can swallow the eventual mouse-up action.
+        let ids = Set(items.map(\.id))
+        for id in Array(cells.keys) where !ids.contains(id) {
+            cells.removeValue(forKey: id)?.removeFromSuperview()
+        }
         selectedView = nil
         var sessionX: CGFloat = 4
         var utilityX: CGFloat = 8
@@ -125,12 +148,13 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
             let active = item.id == selected
             let width: CGFloat = item.isClipboard ? 104 : (item.isSettings ? 80 : sessionWidth)
             let x: CGFloat = isUtility ? utilityX : sessionX
-            let cell = NSView(frame: NSRect(x: x, y: 5, width: width, height: 28))
-            cell.wantsLayer = true
-            cell.layer?.cornerRadius = 7
+            let cell = cells[item.id] ?? TabCell(frame: .zero)
+            cells[item.id] = cell
+            cell.frame = NSRect(x: x, y: 5, width: width, height: 28)
             cell.layer?.backgroundColor = NSColor(white: active ? 0.17 : 0.07, alpha: 1).cgColor
             let buttonWidth = isUtility ? width - 16 : width - 36
-            let button = TabButton(frame: NSRect(x: 8, y: 0, width: buttonWidth, height: 28))
+            let button = cell.button
+            button.frame = NSRect(x: 8, y: 0, width: buttonWidth, height: 28)
             button.sessionID = item.id
             button.title = item.remoteIdentity.map { "SSH · \($0) · \(item.title)" } ?? item.title
             button.font = .systemFont(ofSize: 12, weight: active ? .medium : .regular)
@@ -160,7 +184,7 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
                 }
             }
             if !isUtility { button.onRename = { [weak self] in self?.onRename?(item.id) } }
-            if !isUtility {
+            if !isUtility, button.menu == nil {
                 let menu = NSMenu()
                 menu.delegate = self
                 for (title, action) in [("Rename Tab…", #selector(renameTab(_:))), ("Close Tab…", #selector(closeTab(_:)))] {
@@ -171,9 +195,10 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
                 }
                 button.menu = menu
             }
-            cell.addSubview(button)
+            cell.close.isHidden = isUtility
             if !isUtility {
-                let close = TabButton(frame: NSRect(x: width - 26, y: 2, width: 22, height: 24))
+                let close = cell.close
+                close.frame = NSRect(x: width - 26, y: 2, width: 22, height: 24)
                 close.sessionID = item.id
                 close.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close tab")
                 close.isBordered = false
@@ -182,17 +207,13 @@ final class TerminalTabStrip: NSView, NSMenuDelegate {
                 close.setAccessibilityLabel("Close \(item.title)")
                 close.target = self
                 close.action = #selector(closeTab(_:))
-                cell.addSubview(close)
             }
-            if active {
-                let underline = NSView(frame: NSRect(x: 8, y: 0, width: width - 16, height: 2))
-                underline.wantsLayer = true
-                underline.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.85).cgColor
-                cell.addSubview(underline)
-            }
-            if isUtility { utilityGroup.addSubview(cell); utilityX += width + 6 }
+            cell.underline.isHidden = !active
+            cell.underline.frame = NSRect(x: 8, y: 0, width: width - 16, height: 2)
+            let parent = isUtility ? utilityGroup : document
+            if cell.superview !== parent { parent.addSubview(cell) }
+            if isUtility { utilityX += width + 6 }
             else {
-                document.addSubview(cell)
                 if active { selectedView = cell }
                 sessionX += sessionWidth + 6
             }
