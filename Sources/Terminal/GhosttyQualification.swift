@@ -247,6 +247,13 @@ enum HarnessQualification {
                 throw TerminalFailure.unavailable("No overlay runtime")
             }
             overlay.fixtureControlsTracking = true
+            let spaceBehavior = overlay.overlaySpaceBehaviorForFixture
+            let requiredBehavior: NSWindow.CollectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary,
+                                                                 .canJoinAllApplications, .ignoresCycle]
+            try check("Fullscreen overlay Space participation",
+                      spaceBehavior.trigger.isSuperset(of: requiredBehavior)
+                        && spaceBehavior.panel.isSuperset(of: requiredBehavior),
+                      "Both the native hover target and workspace join other apps' fullscreen Spaces and stay out of window cycling")
             try check("Shared empty panel",
                       overlay.layout?.panelFrame.size == CGSize(width: 720, height: 550),
                       "No-shell presentation uses the same size as Settings and Terminal")

@@ -150,6 +150,9 @@ final class OverlayController: NSObject, NSWindowDelegate {
         let point = NSPoint(x: triggerFrame.midX, y: triggerFrame.minY + 1)
         return NSWindow.windowNumber(at: point, belowWindowWithWindowNumber: 0) == triggerPanel.windowNumber
     }
+    var overlaySpaceBehaviorForFixture: (trigger: NSWindow.CollectionBehavior, panel: NSWindow.CollectionBehavior) {
+        (triggerPanel.collectionBehavior, panel.collectionBehavior)
+    }
     func settlePresentationForFixture() {
         let target = state.presentation == .collapsed ? 0.0 : 1.0
         motion.cancel(at: target)
@@ -521,6 +524,10 @@ final class OverlayController: NSObject, NSWindowDelegate {
 
     private func configureWindow(_ window: NSPanel) {
         window.level = .floating
+        // Both the hover target and workspace must join the video player's
+        // Space. A high window level alone does not cross Space boundaries.
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary,
+                                     .canJoinAllApplications, .ignoresCycle]
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = false
