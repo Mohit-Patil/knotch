@@ -12,6 +12,7 @@ Download **Knotch.dmg** from [Releases](https://github.com/Mohit-Patil/knotch/re
 
 - Click the notch to open; minimise to hide without stopping your terminals. Configure a global shortcut in Settings.
 - Use **+** for a local terminal or **Connect to Server…** for SSH. SSH uses macOS's `ssh`, your SSH config, keys, and agent.
+- Use **Shift+Enter** for a new line in Codex and other agent prompts, including through SSH and tmux. **Enter** submits. This binding sends a line-feed (Ctrl+J); shell prompts and other terminal programs interpret it according to their own bindings.
 - Use **Settings → Open terminal config** to edit theme, font, and other Ghostty options globally. Save, then choose **Reload terminal config**; running sessions stay open. Knotch stores its overrides in `~/Library/Application Support/dev.personal.Knotch/config`, loaded after your standard Ghostty config.
 - Clipboard history stays on your Mac. Pause capture, pin entries, or clear history from Clipboard. Turn off **Keep history after quitting Knotch** for memory-only history.
 - Drag clipboard items into local terminals to insert text or file paths. Dropping does not press Return.
