@@ -178,6 +178,11 @@ final class GhosttyRuntime {
         guard let candidate = ghostty_config_new() else {
             throw TerminalFailure.unavailable("Ghostty configuration allocation failed.")
         }
+        // Load shipped defaults even when an existing personal config predates
+        // them. User bindings loaded below can still override these defaults.
+        if let defaults = Bundle.main.url(forResource: "terminal", withExtension: "conf") {
+            defaults.path.withCString { ghostty_config_load_file(candidate, $0) }
+        }
         if loadPersonal { ghostty_config_load_default_files(candidate) }
         // Finish the inherited include chain before loading Knotch's global overrides.
         ghostty_config_load_recursive_files(candidate)

@@ -108,6 +108,8 @@ enum HarnessQualification {
             try await waitFor { screen(terminal).contains("PASTE_RESULT:literal café $ ; ` 日本語") }
             try check("G0-05 paste", true, "Explicit engine paste preserved literal text; test separately pressed Return")
 
+            try await qualifyShiftEnter(runtime: runtime, session: terminal)
+
             let identity = terminal.surface
             send("for i in {1..65}; do printf 'BOUNDED_TICK:%s\\n' $i; sleep 1; done; printf 'COUNTER_DONE\\n'\r", to: terminal)
             try await waitFor { screen(terminal).contains("BOUNDED_TICK:1\n") }
